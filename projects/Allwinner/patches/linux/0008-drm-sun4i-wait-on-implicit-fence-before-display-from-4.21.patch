@@ -1,0 +1,81 @@
+From 7b24eec754ba0f0f794ab09413dcde2585b4a84b Mon Sep 17 00:00:00 2001
+From: Qiang Yu <yuq825@gmail.com>
+Date: Thu, 22 Nov 2018 09:44:17 +0800
+Subject: [PATCH] drm/sun4i: wait on implicit fence before display
+
+Render like lima will attach a fence to the framebuffer
+dma_buf, display like sun4i should wait it finish before
+show the framebuffer. Otherwise tearing will be observed.
+
+Signed-off-by: Qiang Yu <yuq825@gmail.com>
+Signed-off-by: Daniel Vetter <daniel.vetter@ffwll.ch>
+Link: https://patchwork.freedesktop.org/patch/msgid/20181122014417.23285-1-yuq825@gmail.com
+---
+ drivers/gpu/drm/sun4i/sun4i_layer.c    | 2 ++
+ drivers/gpu/drm/sun4i/sun8i_ui_layer.c | 2 ++
+ drivers/gpu/drm/sun4i/sun8i_vi_layer.c | 2 ++
+ 3 files changed, 6 insertions(+)
+
+diff --git a/drivers/gpu/drm/sun4i/sun4i_layer.c b/drivers/gpu/drm/sun4i/sun4i_layer.c
+index 78f77af8805a..3f51744b6e89 100644
+--- a/drivers/gpu/drm/sun4i/sun4i_layer.c
++++ b/drivers/gpu/drm/sun4i/sun4i_layer.c
+@@ -12,6 +12,7 @@
+ 
+ #include <drm/drm_atomic_helper.h>
+ #include <drm/drm_plane_helper.h>
++#include <drm/drm_gem_framebuffer_helper.h>
+ #include <drm/drmP.h>
+ 
+ #include "sun4i_backend.h"
+@@ -112,6 +113,7 @@ static void sun4i_backend_layer_atomic_update(struct drm_plane *plane,
+ }
+ 
+ static const struct drm_plane_helper_funcs sun4i_backend_layer_helper_funcs = {
++	.prepare_fb	= drm_gem_fb_prepare_fb,
+ 	.atomic_disable	= sun4i_backend_layer_atomic_disable,
+ 	.atomic_update	= sun4i_backend_layer_atomic_update,
+ };
+diff --git a/drivers/gpu/drm/sun4i/sun8i_ui_layer.c b/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
+index e3fc8fa920fb..18534263a05d 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
++++ b/drivers/gpu/drm/sun4i/sun8i_ui_layer.c
+@@ -19,6 +19,7 @@
+ #include <drm/drm_crtc_helper.h>
+ #include <drm/drm_fb_cma_helper.h>
+ #include <drm/drm_gem_cma_helper.h>
++#include <drm/drm_gem_framebuffer_helper.h>
+ #include <drm/drm_plane_helper.h>
+ #include <drm/drmP.h>
+ 
+@@ -300,6 +301,7 @@ static void sun8i_ui_layer_atomic_update(struct drm_plane *plane,
+ }
+ 
+ static struct drm_plane_helper_funcs sun8i_ui_layer_helper_funcs = {
++	.prepare_fb	= drm_gem_fb_prepare_fb,
+ 	.atomic_check	= sun8i_ui_layer_atomic_check,
+ 	.atomic_disable	= sun8i_ui_layer_atomic_disable,
+ 	.atomic_update	= sun8i_ui_layer_atomic_update,
+diff --git a/drivers/gpu/drm/sun4i/sun8i_vi_layer.c b/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
+index 4249edfb47ed..87be898f9b7a 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
++++ b/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
+@@ -13,6 +13,7 @@
+ #include <drm/drm_crtc_helper.h>
+ #include <drm/drm_fb_cma_helper.h>
+ #include <drm/drm_gem_cma_helper.h>
++#include <drm/drm_gem_framebuffer_helper.h>
+ #include <drm/drm_plane_helper.h>
+ #include <drm/drmP.h>
+ 
+@@ -336,6 +337,7 @@ static void sun8i_vi_layer_atomic_update(struct drm_plane *plane,
+ }
+ 
+ static struct drm_plane_helper_funcs sun8i_vi_layer_helper_funcs = {
++	.prepare_fb	= drm_gem_fb_prepare_fb,
+ 	.atomic_check	= sun8i_vi_layer_atomic_check,
+ 	.atomic_disable	= sun8i_vi_layer_atomic_disable,
+ 	.atomic_update	= sun8i_vi_layer_atomic_update,
+-- 
+2.20.1
+

@@ -1,0 +1,12 @@
+diff --git a/arch/arm/boot/dts/sun8i-h3-beelink-x2.dts b/arch/arm/boot/dts/sun8i-h3-beelink-x2.dts
+index 5d23667dc2d2..671600d6bb53 100644
+--- a/arch/arm/boot/dts/sun8i-h3-beelink-x2.dts
++++ b/arch/arm/boot/dts/sun8i-h3-beelink-x2.dts
+@@ -54,6 +54,7 @@
+ 	aliases {
+ 		serial0 = &uart0;
+ 		/* ethernet0 is the H3 emac, defined in sun8i-h3.dtsi */
++		ethernet0 = &emac;
+ 		ethernet1 = &sdiowifi;
+ 	};
+ 
