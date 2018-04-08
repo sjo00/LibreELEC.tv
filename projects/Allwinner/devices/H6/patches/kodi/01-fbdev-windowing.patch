@@ -62,18 +62,6 @@ diff -Nur a/xbmc/platform/linux/input/CMakeLists.txt b/xbmc/platform/linux/input
    list(APPEND SOURCES LinuxInputDevices.cpp)
    list(APPEND HEADERS LinuxInputDevices.h)
  endif()
-diff -Nur a/xbmc/utils/EGLUtils.cpp b/xbmc/utils/EGLUtils.cpp
---- a/xbmc/utils/EGLUtils.cpp	2018-04-01 00:19:02.000000000 +0200
-+++ b/xbmc/utils/EGLUtils.cpp	2018-04-08 19:39:03.826477213 +0200
-@@ -93,7 +93,7 @@
-     EGL_RED_SIZE,        8,
-     EGL_GREEN_SIZE,      8,
-     EGL_BLUE_SIZE,       8,
--    EGL_ALPHA_SIZE,      8,
-+    EGL_ALPHA_SIZE,      0,
-     EGL_DEPTH_SIZE,     16,
-     EGL_STENCIL_SIZE,    0,
-     EGL_SAMPLE_BUFFERS,  0,
 diff -Nur a/xbmc/windowing/aw/CMakeLists.txt b/xbmc/windowing/aw/CMakeLists.txt
 --- a/xbmc/windowing/aw/CMakeLists.txt	1970-01-01 01:00:00.000000000 +0100
 +++ b/xbmc/windowing/aw/CMakeLists.txt	2018-04-08 16:56:19.246124131 +0200
