@@ -32,6 +32,15 @@ PKG_NEED_UNPACK="$PROJECT_DIR/$PROJECT/bootloader"
 [ -n "$DEVICE" ] && PKG_NEED_UNPACK+=" $PROJECT_DIR/$PROJECT/devices/$DEVICE/bootloader"
 
 case "$PROJECT" in
+  Allwinner)
+    PKG_VERSION="f4077661c6c0f3b92f26cb7c35432ad64615fe32"
+    PKG_SHA256="f9a63bd06195f580122bb31edb10e6a6673b105d22ef4276d38b115c815770ce"
+    PKG_URL="https://github.com/Icenowy/u-boot/archive/$PKG_VERSION.tar.gz"
+    if [ "$DEVICE" = "H6" ]; then
+      PKG_DEPENDS_TARGET+=" sunxi-atf"
+    fi
+    PKG_PATCH_DIRS="aw"
+    ;;
   Rockchip)
     PKG_VERSION="5ecf0ee"
     PKG_SHA256="fba1d26583d446a5bbb5713fe37848e05b546d125384c2c2d2883414d61b7cad"
@@ -52,6 +61,9 @@ make_target() {
     echo "UBOOT_SYSTEM must be set to build an image"
     echo "see './scripts/uboot_helper' for more information"
   else
+    if [ "$PROJECT" = "Allwinner" -a "$DEVICE" = "H6" ]; then
+      cp -av $(get_build_dir sunxi-atf)/build/sun50i_h6/debug/bl31.bin .
+    fi
     CROSS_COMPILE="$TARGET_KERNEL_PREFIX" LDFLAGS="" ARCH=arm make mrproper
     CROSS_COMPILE="$TARGET_KERNEL_PREFIX" LDFLAGS="" ARCH=arm make $($ROOT/$SCRIPTS/uboot_helper $PROJECT $DEVICE $UBOOT_SYSTEM config)
     CROSS_COMPILE="$TARGET_KERNEL_PREFIX" LDFLAGS="" ARCH=arm make HOSTCC="$HOST_CC" HOSTSTRIP="true"

@@ -1,0 +1,31 @@
+diff -Nur a/arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi	2018-03-28 20:27:22.000000000 +0200
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi	2018-04-04 23:10:27.182746297 +0200
+@@ -162,6 +162,27 @@
+ 			};
+ 		};
+ 
++		gpu: gpu@1800000 {
++			compatible = "arm,malit720", "arm,malit72x", "arm,malit7xx", "arm,mali-midgard";
++			reg = <0x01800000 0x4000>;
++			interrupts = <GIC_SPI 84 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 85 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 83 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "JOB", "MMU", "GPU";
++
++			clocks = <&ccu CLK_GPU>, <&ccu CLK_BUS_GPU>;
++			clock-names = "clk_mali", "clk_bus_mali";
++			resets = <&ccu RST_BUS_GPU>;
++//			operating-points-v2 = <&gpu_opp_table>;
++// 			power_model@0 {
++// 				compatible = "arm,mali-simple-power-model";
++// 				static-coefficient = <2427750>;
++// 				dynamic-coefficient = <4687>;
++// 				ts = <20000 2000 (-20) 2>;
++// 				thermal-zone = "gpu";
++// 			};
++		};
++
+ 		syscon: syscon@3000000 {
+ 			compatible = "allwinner,sun50i-h6-system-controller",
+ 				"syscon";

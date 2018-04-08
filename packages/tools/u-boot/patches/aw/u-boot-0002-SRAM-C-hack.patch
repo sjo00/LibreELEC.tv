@@ -1,0 +1,26 @@
+diff -Nur a/board/sunxi/board.c b/board/sunxi/board.c
+--- a/board/sunxi/board.c	2018-02-14 07:44:46.000000000 +0100
++++ b/board/sunxi/board.c	2018-04-06 20:23:40.269222153 +0200
+@@ -193,6 +193,7 @@
+ int board_init(void)
+ {
+ 	__maybe_unused int id_pfr1, ret, satapwr_pin, macpwr_pin;
++	__maybe_unused u32 reg_value;
+ 
+ 	gd->bd->bi_boot_params = (PHYS_SDRAM_0 + 0x100);
+ 
+@@ -229,6 +230,14 @@
+ 	if (ret)
+ 		return ret;
+ 
++#ifdef CONFIG_MACH_SUN50I_H6
++	/* SRAM C hack */
++	/* set SRAM for video use (A64 only) */
++	reg_value = readl(SUNXI_SRAMC_BASE + 0x04);
++	reg_value &= ~(0x01 << 24);
++	writel(reg_value, SUNXI_SRAMC_BASE + 0x04);
++#endif
++
+ #ifdef CONFIG_SATAPWR
+ 	satapwr_pin = sunxi_name_to_gpio(CONFIG_SATAPWR);
+ 	gpio_request(satapwr_pin, "satapwr");

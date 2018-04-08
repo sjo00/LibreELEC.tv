@@ -1,0 +1,133 @@
+################################################################################
+# setup system defaults
+################################################################################
+
+  # The TARGET_CPU variable controls which processor should be targeted for
+  # generated code.
+    case $TARGET_ARCH in
+      aarch64)
+        TARGET_CPU="cortex-a53"
+        TARGET_CPU_FLAGS="+crc+crypto"
+        TARGET_FEATURES="64bit"
+        TARGET_KERNEL_ARCH="arm64"
+        ;;
+      arm)
+        TARGET_KERNEL_ARCH="arm64"
+        TARGET_PATCH_ARCH="aarch64"
+        TARGET_FLOAT="hard"
+        TARGET_CPU="cortex-a53"
+        TARGET_CPU_FLAGS="+crc"
+        TARGET_FPU="crypto-neon-fp-armv8"
+        TARGET_FEATURES="32bit"
+        ;;
+    esac
+
+  # Bootloader to use (syslinux / u-boot / bcm2835-bootloader)
+    BOOTLOADER="u-boot"
+
+  # u-boot version to use (default)
+    UBOOT_VERSION="default"
+
+  # Configuration for u-boot
+  #  UBOOT_CONFIG="pine_h64_defconfig"
+
+  # Target Configfile for u-boot
+  #  UBOOT_CONFIGFILE=""
+
+  # Kernel target
+    KERNEL_TARGET="Image"
+
+  # Kernel extra targets to build
+    KERNEL_UBOOT_EXTRA_TARGET="allwinner/sun50i-h6-pine-h64.dtb"
+
+  # Additional kernel make parameters (for example to specify the u-boot loadaddress)
+    KERNEL_MAKE_EXTRACMD="dtbs"
+
+  # Kernel to use. values can be:
+  # default:  default mainline kernel
+    LINUX="allwinner-h6"
+
+################################################################################
+# setup build defaults
+################################################################################
+
+  # Build optimizations (size/normal)
+    OPTIMIZATIONS="size"
+
+  # Project CFLAGS
+    PROJECT_CFLAGS=""
+
+  # LTO (Link Time Optimization) support
+    LTO_SUPPORT="yes"
+
+  # GOLD (Google Linker) support
+    GOLD_SUPPORT="yes"
+
+  # SquashFS compression method (gzip / lzo / xz)
+    SQUASHFS_COMPRESSION="lzo"
+
+
+################################################################################
+# setup project defaults
+################################################################################
+
+  # build and install ALSA Audio support (yes / no)
+    ALSA_SUPPORT="yes"
+
+  # OpenGL(X) implementation to use (no / mesa)
+    OPENGL="no"
+
+  # OpenGL-ES implementation to use (no / bcm2835-driver / gpu-viv-bin-mx6q)
+    OPENGLES="sunxi-mali"
+
+  # include uvesafb support (yes / no)
+    UVESAFB_SUPPORT="no"
+
+  # Displayserver to use (x11 / no)
+    DISPLAYSERVER="no"
+
+  # Windowmanager to use (ratpoison / fluxbox / none)
+    WINDOWMANAGER="none"
+
+  # Xorg Graphic drivers to use (all / i915,i965,r200,r300,r600,nvidia)
+  # Space separated list is supported,
+  # e.g. GRAPHIC_DRIVERS="i915 i965 r300 r600 radeonsi nvidia"
+    GRAPHIC_DRIVERS=""
+
+  # KODI Player implementation to use (default / bcm2835-driver / libfslvpuwrap)
+    KODIPLAYER_DRIVER="sunxi-mali"
+
+  # Modules to install in initramfs for early boot
+    INITRAMFS_MODULES=""
+
+  # additional Firmware to use (dvb-firmware, misc-firmware, wlan-firmware)
+  # Space separated list is supported,
+  # e.g. FIRMWARE="dvb-firmware misc-firmware wlan-firmware"
+    FIRMWARE="misc-firmware wlan-firmware dvb-firmware"
+
+  # build and install ATV IR remote support (yes / no)
+    ATVCLIENT_SUPPORT="no"
+
+  # build and install IRServer IR/LCD support (yes / no)
+    IRSERVER_SUPPORT="no"
+
+  # build with swap support (yes / no)
+    SWAP_SUPPORT="yes"
+
+  # swap support enabled per default (yes / no)
+    SWAP_ENABLED_DEFAULT="no"
+
+  # swapfile size if SWAP_SUPPORT=yes in MB
+    SWAPFILESIZE="128"
+
+  # build with installer (yes / no)
+    INSTALLER_SUPPORT="no"
+
+  # kernel image name
+    KERNEL_NAME="KERNEL"
+
+  # additional drivers to install:
+  # for a list of additinoal drivers see packages/linux-drivers
+  # Space separated list is supported,
+  # e.g. ADDITIONAL_DRIVERS="DRIVER1 DRIVER2"
+  ADDITIONAL_DRIVERS="gpu-sunxi"

@@ -32,6 +32,12 @@ PKG_IS_KERNEL_PKG="yes"
 PKG_PATCH_DIRS="$LINUX"
 
 case "$LINUX" in
+  allwinner-h6)
+    PKG_VERSION="51c906ee3701f3c63dc21b443eb5f58d06bbec10"
+    PKG_SHA256="523e74258a153f41293e93a0011e12eb79759c3f26ff1ca0973890ba855c78fe"
+    PKG_URL="https://github.com/jernejsk/linux-1/archive/$PKG_VERSION.tar.gz"
+    PKG_SOURCE_DIR="linux-1-$PKG_VERSION"
+    ;;
   amlogic-3.10)
     PKG_VERSION="95ba9d626c0fce672caa296f5911ab9190881642"
     PKG_SHA256="df34b086993fd3552efae92d84d28990a61a1ca79a8703a4b64241ab80e3b6db"

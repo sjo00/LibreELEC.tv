@@ -1,0 +1,12 @@
+diff -Nur a/driver/product/kernel/drivers/gpu/arm/midgard/mali_kbase_sync.h c/driver/product/kernel/drivers/gpu/arm/midgard/mali_kbase_sync.h
+--- a/driver/product/kernel/drivers/gpu/arm/midgard/mali_kbase_sync.h	2018-03-06 18:05:25.000000000 +0100
++++ c/driver/product/kernel/drivers/gpu/arm/midgard/mali_kbase_sync.h	2018-04-06 22:48:19.371119548 +0200
+@@ -161,7 +161,7 @@
+  */
+ static inline void kbase_sync_fence_close_fd(int fd)
+ {
+-	sys_close(fd);
++	put_unused_fd(fd);
+ }
+ 
+ /**
