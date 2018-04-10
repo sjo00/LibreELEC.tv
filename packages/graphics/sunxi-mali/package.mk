@@ -31,6 +31,7 @@ case $DEVICE in
     PKG_VERSION="ddb874a024f212360ed76c60c5c37397f00f9bd5"
     PKG_URL="https://github.com/jernejsk/H6-mali-userspace/archive/$PKG_VERSION.tar.gz"
     PKG_SOURCE_DIR="H6-mali-userspace-$PKG_VERSION"
+    PKG_DEPENDS_TARGET="toolchain minigbm"
     INCLUDE_DIR=include
     LIBNAME=libmali.so
     if [ "$ARCH" = "arm" ]; then
@@ -69,10 +70,16 @@ makeinstall_target() {
                libEGL.so.1.4 \
                libGLESv2.so \
                libGLESv2.so.2 \
-               libGLESv2.so.2.0 \
-               libgbm.so \
-               libgbm.so.1; do
+               libGLESv2.so.2.0; do
       ln -sfv $LIBNAME $INSTALL/usr/lib/${lib}
       ln -sfv $LIBNAME $SYSROOT_PREFIX/usr/lib/${lib}
     done
+
+    if [ "$DEVICE" != "H6" ]; then
+      for lib in libgbm.so \
+                 libgbm.so.1; do
+        ln -sfv $LIBNAME $INSTALL/usr/lib/${lib}
+        ln -sfv $LIBNAME $SYSROOT_PREFIX/usr/lib/${lib}
+      done
+    fi
 }

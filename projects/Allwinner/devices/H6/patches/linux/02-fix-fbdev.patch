@@ -1,14 +1,73 @@
 diff --git a/drivers/gpu/drm/drm_fb_helper.c b/drivers/gpu/drm/drm_fb_helper.c
-index 035784ddd133..54e93a97b6fd 100644
+index 035784ddd133..c34324e783cb 100644
 --- a/drivers/gpu/drm/drm_fb_helper.c
 +++ b/drivers/gpu/drm/drm_fb_helper.c
-@@ -1595,9 +1595,6 @@ int drm_fb_helper_check_var(struct fb_var_screeninfo *var,
- 	case 16:
- 		depth = (var->green.length == 6) ? 16 : 15;
+@@ -1603,7 +1603,7 @@ int drm_fb_helper_check_var(struct fb_var_screeninfo *var,
+ 		break;
+ 	}
+ 
+-	switch (depth) {
++	/*switch (depth) {
+ 	case 8:
+ 		var->red.offset = 0;
+ 		var->green.offset = 0;
+@@ -1644,7 +1644,7 @@ int drm_fb_helper_check_var(struct fb_var_screeninfo *var,
+ 		var->transp.length = 0;
+ 		var->transp.offset = 0;
  		break;
 -	case 32:
--		depth = (var->transp.length > 0) ? 32 : 24;
++	case 32:*/
+ 		var->red.offset = 16;
+ 		var->green.offset = 8;
+ 		var->blue.offset = 0;
+@@ -1653,10 +1653,10 @@ int drm_fb_helper_check_var(struct fb_var_screeninfo *var,
+ 		var->blue.length = 8;
+ 		var->transp.length = 8;
+ 		var->transp.offset = 24;
 -		break;
++		/*break;
  	default:
- 		depth = var->bits_per_pixel;
+ 		return -EINVAL;
+-	}
++	}*/
+ 	return 0;
+ }
+ EXPORT_SYMBOL(drm_fb_helper_check_var);
+@@ -1959,13 +1959,13 @@ void drm_fb_helper_fill_var(struct fb_info *info, struct drm_fb_helper *fb_helpe
+ 	info->var.yoffset = 0;
+ 	info->var.activate = FB_ACTIVATE_NOW;
+ 
+-	switch (fb->format->depth) {
++	/*switch (fb->format->depth) {
+ 	case 8:
+ 		info->var.red.offset = 0;
+ 		info->var.green.offset = 0;
+ 		info->var.blue.offset = 0;
+ 		info->var.red.length = 8; /* 8bit DAC */
+-		info->var.green.length = 8;
++		/*info->var.green.length = 8;
+ 		info->var.blue.length = 8;
+ 		info->var.transp.offset = 0;
+ 		info->var.transp.length = 0;
+@@ -1999,7 +1999,7 @@ void drm_fb_helper_fill_var(struct fb_info *info, struct drm_fb_helper *fb_helpe
+ 		info->var.transp.offset = 0;
+ 		info->var.transp.length = 0;
  		break;
+-	case 32:
++	case 32:*/
+ 		info->var.red.offset = 16;
+ 		info->var.green.offset = 8;
+ 		info->var.blue.offset = 0;
+@@ -2008,10 +2008,10 @@ void drm_fb_helper_fill_var(struct fb_info *info, struct drm_fb_helper *fb_helpe
+ 		info->var.blue.length = 8;
+ 		info->var.transp.offset = 24;
+ 		info->var.transp.length = 8;
+-		break;
++		/*break;
+ 	default:
+ 		break;
+-	}
++	}*/
+ 
+ 	info->var.xres = fb_width;
+ 	info->var.yres = fb_height;

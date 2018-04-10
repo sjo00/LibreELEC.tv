@@ -47,6 +47,8 @@
   # default:  default mainline kernel
     LINUX="allwinner-h6"
 
+    EXTRA_CMDLINE="console=tty1 console=ttyS0,115200 loglevel=99 debugging"
+
 ################################################################################
 # setup build defaults
 ################################################################################
