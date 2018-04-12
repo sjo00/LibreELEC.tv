@@ -28,7 +28,7 @@ PKG_TOOLCHAIN="manual"
 
 case $DEVICE in
   H6)
-    PKG_VERSION="ddb874a024f212360ed76c60c5c37397f00f9bd5"
+    PKG_VERSION="ac4f95e6860f71dac5a01bf1195c5e3a073df2d2"
     PKG_URL="https://github.com/jernejsk/H6-mali-userspace/archive/$PKG_VERSION.tar.gz"
     PKG_SOURCE_DIR="H6-mali-userspace-$PKG_VERSION"
     PKG_DEPENDS_TARGET="toolchain minigbm"

@@ -1,31 +1,40 @@
-diff -Nur a/xbmc/utils/EGLUtils.cpp c/xbmc/utils/EGLUtils.cpp
---- a/xbmc/utils/EGLUtils.cpp	2018-04-01 00:19:02.000000000 +0200
-+++ c/xbmc/utils/EGLUtils.cpp	2018-04-10 22:26:02.554269479 +0200
-@@ -103,7 +103,7 @@
-     EGL_NONE
-   };
+diff -Nur a/xbmc/windowing/gbm/DRMAtomic.cpp c/xbmc/windowing/gbm/DRMAtomic.cpp
+--- a/xbmc/windowing/gbm/DRMAtomic.cpp	2018-04-01 00:19:02.000000000 +0200
++++ c/xbmc/windowing/gbm/DRMAtomic.cpp	2018-04-12 23:01:41.369204015 +0200
+@@ -156,7 +156,7 @@
+   else
+     plane = m_primary_plane;
  
--#if defined(EGL_EXT_platform_base) && defined(EGL_KHR_platform_gbm) && defined(HAVE_GBM)
-+#if 0 //defined(EGL_EXT_platform_base) && defined(EGL_KHR_platform_gbm) && defined(HAVE_GBM)
-   if (m_eglDisplay == EGL_NO_DISPLAY &&
-       CEGLUtils::HasExtension(EGL_NO_DISPLAY, "EGL_EXT_platform_base") &&
-       CEGLUtils::HasExtension(EGL_NO_DISPLAY, "EGL_KHR_platform_gbm"))
-diff -Nur a/xbmc/utils/EGLUtils.h c/xbmc/utils/EGLUtils.h
---- a/xbmc/utils/EGLUtils.h	2018-04-01 00:19:02.000000000 +0200
-+++ c/xbmc/utils/EGLUtils.h	2018-04-10 21:13:26.872801875 +0200
-@@ -23,7 +23,8 @@
- #include <string>
- #include <stdexcept>
+-  if (rendered)
++  if (rendered && videoLayer)
+   {
+     AddPlaneProperty(m_req, plane, "FB_ID", fb_id);
+     AddPlaneProperty(m_req, plane, "CRTC_ID", m_crtc->crtc->crtc_id);
+@@ -169,12 +169,6 @@
+     AddPlaneProperty(m_req, plane, "CRTC_W", m_mode->hdisplay);
+     AddPlaneProperty(m_req, plane, "CRTC_H", m_mode->vdisplay);
+   }
+-  else if (videoLayer && !g_windowManager.HasVisibleControls())
+-  {
+-    // disable gui plane when video layer is active and gui has no visible controls
+-    AddPlaneProperty(m_req, plane, "FB_ID", 0);
+-    AddPlaneProperty(m_req, plane, "CRTC_ID", 0);
+-  }
  
--#include <EGL/egl.h>
-+#include <FBDEV/eglplatform.h>
-+#include <FBDEV/egl.h>
+   auto ret = drmModeAtomicCommit(m_fd, m_req, flags | DRM_MODE_ATOMIC_TEST_ONLY, nullptr);
+   if (ret < 0)
+@@ -206,7 +200,7 @@
  
- #include "StringUtils.h"
+   struct drm_fb *drm_fb = nullptr;
  
+-  if (rendered)
++  if (rendered && videoLayer)
+   {
+     drm_fb = CDRMUtils::DrmFbGetFromBo(bo);
+     if (!drm_fb)
 diff -Nur a/xbmc/windowing/gbm/GBMUtils.cpp c/xbmc/windowing/gbm/GBMUtils.cpp
 --- a/xbmc/windowing/gbm/GBMUtils.cpp	2018-04-01 00:19:02.000000000 +0200
-+++ c/xbmc/windowing/gbm/GBMUtils.cpp	2018-04-10 21:10:07.783124383 +0200
++++ c/xbmc/windowing/gbm/GBMUtils.cpp	2018-04-12 23:04:16.422104532 +0200
 @@ -69,6 +69,14 @@
                                                                           width,
                                                                           height);
@@ -41,30 +50,31 @@ diff -Nur a/xbmc/windowing/gbm/GBMUtils.cpp c/xbmc/windowing/gbm/GBMUtils.cpp
    return true;
  }
  
-@@ -84,6 +92,11 @@
+@@ -84,6 +92,12 @@
      gbm_surface_destroy(m_surface);
      m_surface = nullptr;
    }
 +
 +  if(m_nativeWindow)
 +  {
-+    m_nativeWindow = static_cast<EGLNativeWindowType>(NULL);
++    delete m_nativeWindow;
++    m_nativeWindow = nullptr;
 +  }
  }
  
  struct gbm_bo *CGBMUtils::LockFrontBuffer()
 diff -Nur a/xbmc/windowing/gbm/GBMUtils.h c/xbmc/windowing/gbm/GBMUtils.h
 --- a/xbmc/windowing/gbm/GBMUtils.h	2018-04-01 00:19:02.000000000 +0200
-+++ c/xbmc/windowing/gbm/GBMUtils.h	2018-04-10 21:11:57.103055493 +0200
-@@ -21,6 +21,8 @@
- #pragma once
++++ c/xbmc/windowing/gbm/GBMUtils.h	2018-04-11 23:37:56.129546007 +0200
+@@ -22,6 +22,8 @@
  
  #include <gbm.h>
-+#include <FBDEV/eglplatform.h>
-+#include <FBDEV/egl.h>
  
++#include <EGL/egl.h>
++
  class CGBMUtils
  {
+ public:
 @@ -36,6 +38,7 @@
  
    struct gbm_device *m_device = nullptr;
@@ -73,22 +83,9 @@ diff -Nur a/xbmc/windowing/gbm/GBMUtils.h c/xbmc/windowing/gbm/GBMUtils.h
  
  protected:
    struct gbm_bo *m_bo = nullptr;
-diff -Nur a/xbmc/windowing/gbm/WinSystemGbm.cpp c/xbmc/windowing/gbm/WinSystemGbm.cpp
---- a/xbmc/windowing/gbm/WinSystemGbm.cpp	2018-04-06 16:46:57.000000000 +0200
-+++ c/xbmc/windowing/gbm/WinSystemGbm.cpp	2018-04-10 22:57:10.103956748 +0200
-@@ -197,7 +197,8 @@
- {
-   struct gbm_bo *bo = m_GBM->LockFrontBuffer();
- 
--  m_DRM->FlipPage(bo, rendered, videoLayer);
-+  if (videoLayer)
-+	m_DRM->FlipPage(bo, rendered, videoLayer);
- 
-   m_GBM->ReleaseBuffer();
- }
 diff -Nur a/xbmc/windowing/gbm/WinSystemGbmGLESContext.cpp c/xbmc/windowing/gbm/WinSystemGbmGLESContext.cpp
 --- a/xbmc/windowing/gbm/WinSystemGbmGLESContext.cpp	2018-04-01 00:19:02.000000000 +0200
-+++ c/xbmc/windowing/gbm/WinSystemGbmGLESContext.cpp	2018-04-10 21:12:12.547346460 +0200
++++ c/xbmc/windowing/gbm/WinSystemGbmGLESContext.cpp	2018-04-12 23:05:59.409860046 +0200
 @@ -50,7 +50,7 @@
      return false;
    }
@@ -103,7 +100,7 @@ diff -Nur a/xbmc/windowing/gbm/WinSystemGbmGLESContext.cpp c/xbmc/windowing/gbm/
    }
  
 -  if (!m_pGLContext.CreateSurface(reinterpret_cast<EGLNativeWindowType>(m_GBM->m_surface)))
-+  if (!m_pGLContext.CreateSurface(reinterpret_cast<EGLNativeWindowType>(m_GBM->m_nativeWindow)))
++  if (!m_pGLContext.CreateSurface(m_GBM->m_nativeWindow))
    {
      return false;
    }
