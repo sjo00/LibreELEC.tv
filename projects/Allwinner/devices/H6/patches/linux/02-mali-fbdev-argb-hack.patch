@@ -1,0 +1,22 @@
+diff --git a/drivers/gpu/drm/drm_fb_helper.c b/drivers/gpu/drm/drm_fb_helper.c
+index 035784ddd133..6f9e429dba5a 100644
+--- a/drivers/gpu/drm/drm_fb_helper.c
++++ b/drivers/gpu/drm/drm_fb_helper.c
+@@ -1793,7 +1793,7 @@ static int drm_fb_helper_single_fb_probe(struct drm_fb_helper *fb_helper,
+ 	int gamma_size = 0;
+ 
+ 	memset(&sizes, 0, sizeof(struct drm_fb_helper_surface_size));
+-	sizes.surface_depth = 24;
++	sizes.surface_depth = 32;
+ 	sizes.surface_bpp = 32;
+ 	sizes.fb_width = (u32)-1;
+ 	sizes.fb_height = (u32)-1;
+@@ -1825,7 +1825,7 @@ static int drm_fb_helper_single_fb_probe(struct drm_fb_helper *fb_helper,
+ 				sizes.surface_depth = sizes.surface_bpp = 24;
+ 				break;
+ 			case 32:
+-				sizes.surface_depth = 24;
++				sizes.surface_depth = 32;
+ 				sizes.surface_bpp = 32;
+ 				break;
+ 			}

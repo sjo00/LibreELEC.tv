@@ -1,0 +1,37 @@
+diff --git a/drivers/gpu/drm/drm_fb_cma_helper.c b/drivers/gpu/drm/drm_fb_cma_helper.c
+index 186d00adfb5f..c27b77eaa0f2 100644
+--- a/drivers/gpu/drm/drm_fb_cma_helper.c
++++ b/drivers/gpu/drm/drm_fb_cma_helper.c
+@@ -137,6 +137,24 @@ static int drm_fb_cma_mmap(struct fb_info *info, struct vm_area_struct *vma)
+ 				     info->fix.smem_start, info->fix.smem_len);
+ }
+ 
++static struct dma_buf *drm_fb_get_dma_buf(struct fb_info *info)
++{
++	struct drm_fb_helper *helper = info->par;
++	struct drm_device *dev = helper->dev;
++	struct drm_gem_object *gem;
++	struct dma_buf *buf = NULL;
++
++	if (dev->driver->gem_prime_export) {
++		gem = drm_gem_fb_get_obj(helper->fb, 0);
++
++		buf = dev->driver->gem_prime_export(dev, gem, O_RDWR);
++		if (buf)
++			drm_gem_object_reference(gem);
++	}
++
++	return buf;
++}
++
+ static struct fb_ops drm_fbdev_cma_ops = {
+ 	.owner		= THIS_MODULE,
+ 	DRM_FB_HELPER_DEFAULT_OPS,
+@@ -144,6 +162,7 @@ static struct fb_ops drm_fbdev_cma_ops = {
+ 	.fb_copyarea	= drm_fb_helper_sys_copyarea,
+ 	.fb_imageblit	= drm_fb_helper_sys_imageblit,
+ 	.fb_mmap	= drm_fb_cma_mmap,
++	.fb_dmabuf_export = drm_fb_get_dma_buf,
+ };
+ 
+ static int drm_fbdev_cma_deferred_io_mmap(struct fb_info *info,
