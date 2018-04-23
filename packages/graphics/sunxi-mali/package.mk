@@ -17,18 +17,27 @@
 ################################################################################
 
 PKG_NAME="sunxi-mali"
-PKG_VERSION="3d7f4d4"
-PKG_SHA256="ef5f0f2c0545d1a20d283b87aa447f452e353150cdffadc7f405559e42626cb8"
 PKG_ARCH="arm"
 PKG_LICENSE="nonfree"
-PKG_SITE="https://github.com/linux-sunxi/sunxi-mali"
-PKG_URL="https://github.com/mosajjal/r6p2/archive/$PKG_VERSION.tar.gz"
-PKG_SOURCE_DIR="r6p2-$PKG_VERSION*"
-PKG_DEPENDS_TARGET="toolchain libdrm wayland"
+PKG_DEPENDS_TARGET="toolchain libdrm wayland libffi"
 PKG_SECTION="graphics"
 PKG_SHORTDESC="Sunxi Mali-400 support libraries"
 PKG_LONGDESC="Sunxi Mali-400 support libraries"
 PKG_TOOLCHAIN="manual"
+
+if [ "$DEVICE" = "H5" ]; then
+PKG_VERSION=some
+PKG_SITE="https://developer.arm.com/products/software/mali-drivers/user-space"
+PKG_URL="file:///home/jernej/$PKG_NAME-$PKG_VERSION.tar.gz"
+MALI="wayland-drm/libMali.so"
+else
+PKG_VERSION="3d7f4d4"
+PKG_SHA256="ef5f0f2c0545d1a20d283b87aa447f452e353150cdffadc7f405559e42626cb8"
+PKG_SITE="https://github.com/linux-sunxi/sunxi-mali"
+PKG_URL="https://github.com/mosajjal/r6p2/archive/$PKG_VERSION.tar.gz"
+PKG_SOURCE_DIR="r6p2-$PKG_VERSION*"
+MALI="libwayland_for_mali/h3/lib_wayland/libMali.so"
+fi
 
 makeinstall_target() {
   mkdir -p $SYSROOT_PREFIX/usr/include/
@@ -36,8 +45,6 @@ makeinstall_target() {
 
   mkdir -p $SYSROOT_PREFIX/usr/lib/pkgconfig
     cp -PRv $PKG_DIR/pkgconfig/*.pc $SYSROOT_PREFIX/usr/lib/pkgconfig
-
-  MALI="libwayland_for_mali/h3/lib_wayland/libMali.so"
 
   mkdir -p $SYSROOT_PREFIX/usr/lib/
     cp -v $MALI $SYSROOT_PREFIX/usr/lib

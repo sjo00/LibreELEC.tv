@@ -19,6 +19,11 @@ devices = {
       'orangepi_plus2e': { 'dtb': 'sun8i-h3-orangepi-plus2e.dtb', 'config': 'orangepi_plus2e_defconfig' },
       'orangepi_plus': { 'dtb': 'sun8i-h3-orangepi-plus.dtb', 'config': 'orangepi_plus_defconfig' },
     },
+    'H5' : {
+      'orangepi_pc2' : { 'dtb' : 'sun50i-h5-orangepi-pc2.dtb', 'config' : 'orangepi_pc2_defconfig' },
+      'orangepi_prime' : { 'dtb' : 'sun50i-h5-orangepi-prime.dtb', 'config' : 'orangepi_prime_defconfig' },
+      'orangepi_zero_plus2' : { 'dtb' : 'sun50i-h5-orangepi-zero-plus2.dtb', 'config' : 'orangepi_zero_plus2_defconfig' },
+    },
   },
 
   'Rockchip' : {

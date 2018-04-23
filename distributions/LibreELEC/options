@@ -209,4 +209,4 @@
   DEBUG_GROUP_YES="kodi"
 
 # Default supported get handlers (archive, git, file etc.)
-  GET_HANDLER_SUPPORT="archive"
+  GET_HANDLER_SUPPORT="archive file"

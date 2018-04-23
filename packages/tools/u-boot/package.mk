@@ -31,6 +31,10 @@ PKG_IS_KERNEL_PKG="yes"
 PKG_NEED_UNPACK="$PROJECT_DIR/$PROJECT/bootloader"
 [ -n "$DEVICE" ] && PKG_NEED_UNPACK+=" $PROJECT_DIR/$PROJECT/devices/$DEVICE/bootloader"
 
+if [ "$PROJECT" = "Allwinner" -a "$TARGET_KERNEL_ARCH" = "arm64" ]; then
+  PKG_DEPENDS_TARGET+=" sunxi-atf"
+fi
+
 case "$PROJECT" in
   Rockchip)
     PKG_VERSION="5ecf0ee"
@@ -52,6 +56,9 @@ make_target() {
     echo "UBOOT_SYSTEM must be set to build an image"
     echo "see './scripts/uboot_helper' for more information"
   else
+    if [ "$PROJECT" = "Allwinner" -a "$TARGET_KERNEL_ARCH" = "arm64" ]; then
+      cp -av $(get_build_dir sunxi-atf)/bl31.bin .
+    fi
     CROSS_COMPILE="$TARGET_KERNEL_PREFIX" LDFLAGS="" ARCH=arm make mrproper
     CROSS_COMPILE="$TARGET_KERNEL_PREFIX" LDFLAGS="" ARCH=arm make $($ROOT/$SCRIPTS/uboot_helper $PROJECT $DEVICE $UBOOT_SYSTEM config)
     CROSS_COMPILE="$TARGET_KERNEL_PREFIX" LDFLAGS="" ARCH=arm make HOSTCC="$HOST_CC" HOSTSTRIP="true"
