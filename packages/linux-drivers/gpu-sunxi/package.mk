@@ -17,13 +17,9 @@
 ################################################################################
 
 PKG_NAME="gpu-sunxi"
-PKG_VERSION="r6p2-01rel0"
-PKG_SHA256="bb49d23ab3d9fbeb701a127e6f28cff1c963bba05786f98d76edff1df0fe6c52"
 PKG_ARCH="arm aarch64"
 PKG_LICENSE="GPL"
 PKG_SITE="https://developer.arm.com/products/software/mali-drivers/utgard-kernel"
-PKG_URL="https://developer.arm.com/-/media/Files/downloads/mali-drivers/kernel/mali-utgard-gpu/DX910-SW-99002-$PKG_VERSION.tgz"
-PKG_SOURCE_DIR="DX910-SW-99002-$PKG_VERSION"
 PKG_DEPENDS_TARGET="toolchain linux"
 PKG_NEED_UNPACK="$LINUX_DEPENDS"
 PKG_SECTION="driver"
@@ -31,6 +27,16 @@ PKG_SHORTDESC="gpu-sunxi: Linux drivers for Mali GPUs found in Allwinner SoCs"
 PKG_LONGDESC="gpu-sunxi: Linux drivers for Mali GPUs found in Allwinner SoCs"
 PKG_TOOLCHAIN="manual"
 PKG_IS_KERNEL_PKG="yes"
+
+if [ "$DEVICE" = "H5" ]; then
+PKG_VERSION="r6p0-01rel0"
+else
+PKG_VERSION="r6p2-01rel0"
+PKG_SHA256="bb49d23ab3d9fbeb701a127e6f28cff1c963bba05786f98d76edff1df0fe6c52"
+fi
+
+PKG_URL="https://developer.arm.com/-/media/Files/downloads/mali-drivers/kernel/mali-utgard-gpu/DX910-SW-99002-$PKG_VERSION.tgz"
+PKG_SOURCE_DIR="DX910-SW-99002-$PKG_VERSION"
 
 DRIVER_DIR=$PKG_BUILD/src/devicedrv/mali/
 
@@ -41,15 +47,10 @@ pre_patch() {
 }
 
 make_target() {
-  USING_UMP=0 \
-  BUILD=$BUILD \
-  USING_PROFILING=0 \
-  MALI_PLATFORM=sunxi \
-  USING_DVFS=1 \
-  USING_DEVFREQ=0 \
-  KDIR=$(kernel_path) \
-  CROSS_COMPILE=$TARGET_PREFIX \
-    make -C $DRIVER_DIR
+  LDFLAGS="" MALI_PLATFORM_FILES=platform/sunxi/sunxi.c \
+    make -C $(kernel_path) M=$DRIVER_DIR \
+    EXTRA_CFLAGS="-DCONFIG_MALI450 -DCONFIG_MALI_DVFS -DMALI_FAKE_PLATFORM_DEVICE=1" \
+    CONFIG_MALI400=m CONFIG_MALI450=y CONFIG_MALI_DVFS=y
 }
 
 makeinstall_target() {
