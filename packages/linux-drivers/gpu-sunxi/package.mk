@@ -29,7 +29,7 @@ PKG_TOOLCHAIN="manual"
 PKG_IS_KERNEL_PKG="yes"
 
 if [ "$DEVICE" = "H5" ]; then
-PKG_VERSION="r6p0-01rel0"
+PKG_VERSION="r7p0-00rel0"
 else
 PKG_VERSION="r6p2-01rel0"
 PKG_SHA256="bb49d23ab3d9fbeb701a127e6f28cff1c963bba05786f98d76edff1df0fe6c52"

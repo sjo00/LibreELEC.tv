@@ -30,7 +30,7 @@ PKG_LONGDESC="The libffi library provides a portable, high level programming int
 PKG_TOOLCHAIN="autotools"
 
 PKG_CONFIGURE_OPTS_TARGET="--disable-debug \
-                           --enable-static --enable-shared \
+                           --enable-static --disable-shared \
                            --with-pic \
                            --enable-structs \
                            --enable-raw-api \

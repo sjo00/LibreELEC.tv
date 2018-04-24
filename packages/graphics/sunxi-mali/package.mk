@@ -19,14 +19,14 @@
 PKG_NAME="sunxi-mali"
 PKG_ARCH="arm"
 PKG_LICENSE="nonfree"
-PKG_DEPENDS_TARGET="toolchain libdrm wayland libffi"
+PKG_DEPENDS_TARGET="toolchain libdrm wayland"
 PKG_SECTION="graphics"
 PKG_SHORTDESC="Sunxi Mali-400 support libraries"
 PKG_LONGDESC="Sunxi Mali-400 support libraries"
 PKG_TOOLCHAIN="manual"
 
 if [ "$DEVICE" = "H5" ]; then
-PKG_VERSION=some
+PKG_VERSION=some2
 PKG_SITE="https://developer.arm.com/products/software/mali-drivers/user-space"
 PKG_URL="file:///home/jernej/$PKG_NAME-$PKG_VERSION.tar.gz"
 MALI="wayland-drm/libMali.so"
