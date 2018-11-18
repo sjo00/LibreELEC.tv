@@ -2,7 +2,7 @@ diff --git a/arch/arm/boot/dts/sunxi-h3-h5.dtsi b/arch/arm/boot/dts/sunxi-h3-h5.
 index 8aa2befc..d3d70eac 100644
 --- a/arch/arm/boot/dts/sunxi-h3-h5.dtsi
 +++ b/arch/arm/boot/dts/sunxi-h3-h5.dtsi
-@@ -53,6 +53,22 @@
+@@ -53,6 +53,21 @@
  	#address-cells = <1>;
  	#size-cells = <1>;
  
@@ -11,7 +11,6 @@ index 8aa2befc..d3d70eac 100644
 +		simple-audio-card,format = "i2s";
 +		simple-audio-card,name = "allwinner-hdmi";
 +		simple-audio-card,mclk-fs = <256>;
-+		status = "disabled";
 +
 +		simple-audio-card,codec {
 +			sound-dai = <&hdmi>;
@@ -25,7 +24,7 @@ index 8aa2befc..d3d70eac 100644
  	clocks {
  		#address-cells = <1>;
  		#size-cells = <1>;
-@@ -631,6 +648,19 @@
+@@ -631,6 +648,18 @@
  			status = "disabled";
  		};
  
@@ -39,7 +38,6 @@ index 8aa2befc..d3d70eac 100644
 +			dmas = <&dma 27>;
 +			resets = <&ccu RST_BUS_I2S2>;
 +			dma-names = "tx";
-+			status = "disabled";
 +		};
 +
  		codec: codec@1c22c00 {
