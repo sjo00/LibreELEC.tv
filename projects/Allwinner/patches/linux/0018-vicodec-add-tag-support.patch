@@ -1,0 +1,65 @@
+From patchwork Wed Nov 14 13:47:42 2018
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Subject: [PATCHv2,8/9] vicodec: add tag support
+From: Hans Verkuil <hverkuil@xs4all.nl>
+X-Patchwork-Id: 52964
+Message-Id: <20181114134743.18993-9-hverkuil@xs4all.nl>
+X-Patchwork-Delegate: hverkuil@xs4all.nl
+To: linux-media@vger.kernel.org
+Cc: Alexandre Courbot <acourbot@chromium.org>,
+ maxime.ripard@bootlin.com, paul.kocialkowski@bootlin.com,
+ tfiga@chromium.org, Nicolas Dufresne <nicolas@ndufresne.ca>,
+ Hans Verkuil <hans.verkuil@cisco.com>
+Date: Wed, 14 Nov 2018 14:47:42 +0100
+
+From: Hans Verkuil <hans.verkuil@cisco.com>
+
+Copy tags in vicodec.
+
+Signed-off-by: Hans Verkuil <hans.verkuil@cisco.com>
+---
+ drivers/media/platform/vicodec/vicodec-core.c | 14 +++-----------
+ 1 file changed, 3 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/media/platform/vicodec/vicodec-core.c b/drivers/media/platform/vicodec/vicodec-core.c
+index b292cff26c86..72245183b077 100644
+--- a/drivers/media/platform/vicodec/vicodec-core.c
++++ b/drivers/media/platform/vicodec/vicodec-core.c
+@@ -190,18 +190,8 @@ static int device_process(struct vicodec_ctx *ctx,
+ 	}
+ 
+ 	out_vb->sequence = q_cap->sequence++;
+-	out_vb->vb2_buf.timestamp = in_vb->vb2_buf.timestamp;
+-
+-	if (in_vb->flags & V4L2_BUF_FLAG_TIMECODE)
+-		out_vb->timecode = in_vb->timecode;
+-	out_vb->field = in_vb->field;
+ 	out_vb->flags &= ~V4L2_BUF_FLAG_LAST;
+-	out_vb->flags |= in_vb->flags &
+-		(V4L2_BUF_FLAG_TIMECODE |
+-		 V4L2_BUF_FLAG_KEYFRAME |
+-		 V4L2_BUF_FLAG_PFRAME |
+-		 V4L2_BUF_FLAG_BFRAME |
+-		 V4L2_BUF_FLAG_TSTAMP_SRC_MASK);
++	v4l2_m2m_buf_copy_data(in_vb, out_vb, !ctx->is_enc);
+ 
+ 	return 0;
+ }
+@@ -1066,6 +1056,7 @@ static int queue_init(void *priv, struct vb2_queue *src_vq,
+ 	src_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
+ 	src_vq->lock = ctx->is_enc ? &ctx->dev->enc_mutex :
+ 		&ctx->dev->dec_mutex;
++	src_vq->supports_tags = true;
+ 
+ 	ret = vb2_queue_init(src_vq);
+ 	if (ret)
+@@ -1081,6 +1072,7 @@ static int queue_init(void *priv, struct vb2_queue *src_vq,
+ 	dst_vq->mem_ops = &vb2_vmalloc_memops;
+ 	dst_vq->timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_COPY;
+ 	dst_vq->lock = src_vq->lock;
++	dst_vq->supports_tags = true;
+ 
+ 	return vb2_queue_init(dst_vq);
+ }
