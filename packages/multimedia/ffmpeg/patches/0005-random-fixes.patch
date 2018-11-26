@@ -1,0 +1,279 @@
+diff --git a/libavcodec/v4l2_request.c b/libavcodec/v4l2_request.c
+index 2390262165..1ddab5be87 100644
+--- a/libavcodec/v4l2_request.c
++++ b/libavcodec/v4l2_request.c
+@@ -30,7 +30,7 @@
+ #define V4L2_REQUEST_VIDEO_PATH "/dev/video0"
+ #define V4L2_REQUEST_MEDIA_PATH "/dev/media0"
+ 
+-int ff_v4l2_request_get_capture_index(AVFrame *frame)
++int ff_v4l2_request_get_capture_tag(AVFrame *frame)
+ {
+     V4L2RequestDescriptor *req = (V4L2RequestDescriptor*)frame->data[0];
+     return req ? req->capture.index : 0;
+@@ -73,9 +73,10 @@ static int v4l2_request_queue_buffer(V4L2RequestContext *ctx, int request_fd, V4
+         .type = buf->buffer.type,
+         .memory = buf->buffer.memory,
+         .index = buf->index,
++        .tag = buf->index,
+         .bytesused = buf->used,
+         .request_fd = request_fd,
+-        .flags = (request_fd >= 0) ? V4L2_BUF_FLAG_REQUEST_FD : 0,
++        .flags = V4L2_BUF_FLAG_TAG | ((request_fd >= 0) ? V4L2_BUF_FLAG_REQUEST_FD : 0),
+     };
+ 
+     return ioctl(ctx->video_fd, VIDIOC_QBUF, &buffer);
+diff --git a/libavcodec/v4l2_request.h b/libavcodec/v4l2_request.h
+index c1143cca21..eaf4e24cf1 100644
+--- a/libavcodec/v4l2_request.h
++++ b/libavcodec/v4l2_request.h
+@@ -48,7 +48,7 @@ typedef struct V4L2RequestDescriptor {
+     V4L2RequestBuffer capture;
+ } V4L2RequestDescriptor;
+ 
+-int ff_v4l2_request_get_capture_index(AVFrame *frame);
++int ff_v4l2_request_get_capture_tag(AVFrame *frame);
+ 
+ int ff_v4l2_request_reset_frame(AVCodecContext *avctx, AVFrame *frame);
+ 
+diff --git a/libavcodec/v4l2_request_h264.c b/libavcodec/v4l2_request_h264.c
+index 0b76747850..ca7f8392eb 100644
+--- a/libavcodec/v4l2_request_h264.c
++++ b/libavcodec/v4l2_request_h264.c
+@@ -67,51 +67,31 @@ typedef struct DPB {
+     struct v4l2_h264_dpb_entry *entries;
+ } DPB;
+ 
+-static void fill_pic(struct v4l2_h264_dpb_entry *entry,
+-                     const H264Picture          *pic)
+-{
+-    entry->buf_index = ff_v4l2_request_get_capture_index(pic->f);
+-    entry->frame_num = pic->long_ref ? pic->pic_id : pic->frame_num;
+-    entry->flags = V4L2_H264_DPB_ENTRY_FLAG_VALID | V4L2_H264_DPB_ENTRY_FLAG_ACTIVE;
+-    if ((pic->reference & PICT_FRAME) != PICT_FRAME)
+-        entry->flags |= (pic->reference & PICT_TOP_FIELD) ? V4L2_H264_DPB_ENTRY_FLAG_TOP_FIELD : V4L2_H264_DPB_ENTRY_FLAG_BOTTOM_FIELD;
+-    if (pic->reference)
+-        entry->flags |= pic->long_ref ? V4L2_H264_DPB_ENTRY_FLAG_LONG_TERM : V4L2_H264_DPB_ENTRY_FLAG_SHORT_TERM;
+-    //if ((pic->reference & PICT_TOP_FIELD) && pic->field_poc[0] != INT_MAX)
+-        entry->top_field_order_cnt = pic->field_poc[0];
+-    //if ((pic->reference & PICT_BOTTOM_FIELD) && pic->field_poc[1] != INT_MAX)
+-        entry->bottom_field_order_cnt = pic->field_poc[1];
+-}
+-
+-static int dpb_add(DPB *dpb, const H264Picture *pic)
++static int dpb_add(DPB *dpb, const H264Picture *pic, int reference)
+ {
++    struct v4l2_h264_dpb_entry *entry;
++    int buf_tag;
+     int i;
+ 
+-    for (i = 0; i < dpb->size; i++) {
+-        struct v4l2_h264_dpb_entry * const entry = &dpb->entries[i];
+-        if (entry->buf_index == ff_v4l2_request_get_capture_index(pic->f)) {
+-            struct v4l2_h264_dpb_entry temp_entry;
+-
+-            fill_pic(&temp_entry, pic);
+-	    av_log(NULL, AV_LOG_ERROR, "%s: DPB index: %d buffer index: %d\n", __func__, i, entry->buf_index);
+-
+-            if ((temp_entry.flags ^ entry->flags) & (V4L2_H264_DPB_ENTRY_FLAG_TOP_FIELD | V4L2_H264_DPB_ENTRY_FLAG_BOTTOM_FIELD)) {
+-                entry->flags |= temp_entry.flags & (V4L2_H264_DPB_ENTRY_FLAG_TOP_FIELD | V4L2_H264_DPB_ENTRY_FLAG_BOTTOM_FIELD);
+-                if (temp_entry.flags & V4L2_H264_DPB_ENTRY_FLAG_TOP_FIELD) {
+-                    entry->top_field_order_cnt    = temp_entry.top_field_order_cnt;
+-                } else {
+-                    entry->bottom_field_order_cnt = temp_entry.bottom_field_order_cnt;
+-                }
+-            }
++    buf_tag = ff_v4l2_request_get_capture_tag(pic->f);
++
++    for (i = 0; i < dpb->size; i++)
++        if (dpb->entries[i].tag == buf_tag)
+             return 0;
+-        }
+-    }
+ 
+     if (dpb->size >= dpb->max_size)
+         return -1;
+ 
+-    fill_pic(&dpb->entries[dpb->size++], pic);
+-    av_log(NULL, AV_LOG_ERROR, "%s: new DPB index: %d buffer index: %d\n", __func__, dpb->size-1, dpb->entries[dpb->size-1].buf_index);
++    entry = &dpb->entries[dpb->size++];
++    entry->tag = buf_tag;
++    entry->frame_num = pic->long_ref ? pic->pic_id : pic->frame_num;
++    entry->flags = V4L2_H264_DPB_ENTRY_FLAG_VALID | V4L2_H264_DPB_ENTRY_FLAG_ACTIVE;
++    if (pic->long_ref)
++        entry->flags |= V4L2_H264_DPB_ENTRY_FLAG_LONG_TERM;
++    entry->top_field_order_cnt = pic->field_poc[0];
++    entry->bottom_field_order_cnt = pic->field_poc[1];
++
++    av_log(NULL, AV_LOG_ERROR, "%s: new DPB index: %d buffer tag: %d\n", __func__, dpb->size-1, entry->tag);
+     return 0;
+ }
+ 
+@@ -127,13 +107,13 @@ static int fill_dpb(struct v4l2_ctrl_h264_decode_param *decode,
+ 
+     for (i = 0; i < h->short_ref_count; i++) {
+         const H264Picture *pic = h->short_ref[i];
+-        if (pic && dpb_add(&dpb, pic) < 0)
++	if (pic && dpb_add(&dpb, pic, h->short_ref[i]->reference) < 0)
+             return -1;
+     }
+ 
+     for (i = 0; i < 16; i++) {
+         const H264Picture *pic = h->long_ref[i];
+-        if (pic && dpb_add(&dpb, pic) < 0)
++	if (pic && dpb_add(&dpb, pic, h->long_ref[i]->reference) < 0)
+             return -1;
+     }
+ 
+@@ -141,7 +121,7 @@ static int fill_dpb(struct v4l2_ctrl_h264_decode_param *decode,
+         const H264Picture *pic = &h->DPB[i];
+ 
+         if (pic != h->cur_pic_ptr && pic->f->buf[0])
+-            dpb_add(&dpb, pic);
++            dpb_add(&dpb, pic, pic->reference);
+     }
+ 
+     av_log(NULL, AV_LOG_ERROR, "%s: num of DPB entries: %d\n", __func__, dpb.size);
+@@ -152,25 +132,25 @@ static int fill_dpb(struct v4l2_ctrl_h264_decode_param *decode,
+ static uint8_t get_ref_pic_index(const H264Picture *pic,
+                                  struct v4l2_ctrl_h264_decode_param *decode)
+ {
+-    int frame_buf_index;
++    int frame_buf_tag;
+     int frame_num;
+     uint8_t i;
+ 
+     if (!pic)
+         return 0;
+ 
+-    frame_buf_index = ff_v4l2_request_get_capture_index(pic->f);
++    frame_buf_tag = ff_v4l2_request_get_capture_tag(pic->f);
+     frame_num = pic->long_ref ? pic->pic_id : pic->frame_num;
+ 
+     for (i = 0; i < FF_ARRAY_ELEMS(decode->dpb); i++) {
+         struct v4l2_h264_dpb_entry *entry = &decode->dpb[i];
+-	if ((entry->flags & V4L2_H264_DPB_ENTRY_FLAG_VALID) && (entry->buf_index == frame_buf_index) && (entry->frame_num == frame_num)) {
+-		av_log(NULL, AV_LOG_ERROR, "%s: index found: %d for buf_index: %d\n", __func__, i, frame_buf_index);
++	if ((entry->flags & V4L2_H264_DPB_ENTRY_FLAG_VALID) && (entry->tag == frame_buf_tag) && (entry->frame_num == frame_num)) {
++		av_log(NULL, AV_LOG_ERROR, "%s: index found: %d for tag: %d\n", __func__, i, frame_buf_tag);
+             return i;
+ 	}
+     }
+ 
+-    av_log(NULL, AV_LOG_ERROR, "%s: index not found for buf_index: %d\n", __func__, frame_buf_index);
++    av_log(NULL, AV_LOG_ERROR, "%s: index not found for tag: %d\n", __func__, frame_buf_tag);
+ 
+     return 0;
+ }
+@@ -320,21 +300,15 @@ static int v4l2_request_h264_end_frame(AVCodecContext *avctx)
+ 
+     count = sl->list_count > 0 ? sl->ref_count[0] : 0;
+     av_log(NULL, AV_LOG_ERROR, "%s: backward ref count: %d\n", __func__, count);
+-    for (i = 0; i < count; i++) {
+-        slice.ref_pic_list0[i] = get_ref_pic_index(sl->ref_list[0][i].parent, &decode) << 1;
+-        if (sl->ref_list[0][i].reference & PICT_BOTTOM_FIELD)
+-            slice.ref_pic_list0[i] |= 1;
+-    }
++    for (i = 0; i < count; i++)
++        slice.ref_pic_list0[i] = get_ref_pic_index(sl->ref_list[0][i].parent, &decode);
+     if (count)
+         fill_single_pred_weight_table(sl, 0, &slice.pred_weight_table.weight_factors[0]);
+ 
+     count = sl->list_count > 1 ? sl->ref_count[1] : 0;
+     av_log(NULL, AV_LOG_ERROR, "%s: forward ref count: %d\n", __func__, count);
+-    for (i = 0; i < count; i++) {
+-        slice.ref_pic_list1[i] = get_ref_pic_index(sl->ref_list[1][i].parent, &decode) << 1;
+-        if (sl->ref_list[1][i].reference & PICT_BOTTOM_FIELD)
+-            slice.ref_pic_list1[i] |= 1;
+-    }
++    for (i = 0; i < count; i++)
++        slice.ref_pic_list1[i] = get_ref_pic_index(sl->ref_list[1][i].parent, &decode);
+     if (count)
+         fill_single_pred_weight_table(sl, 1, &slice.pred_weight_table.weight_factors[1]);
+ 
+diff --git a/libavcodec/v4l2_request_hevc.c b/libavcodec/v4l2_request_hevc.c
+index 6aeb045203..ac2f4b20e1 100644
+--- a/libavcodec/v4l2_request_hevc.c
++++ b/libavcodec/v4l2_request_hevc.c
+@@ -83,26 +83,26 @@ static void v4l2_request_hevc_fill_pred_table(const HEVCContext *h, struct v4l2_
+     }
+ }
+ 
+-static int find_frame_rps_type(const HEVCContext *h, int frame_buf_index)
++static int find_frame_rps_type(const HEVCContext *h, int frame_buf_tag)
+ {
+     const HEVCFrame *frame;
+     int i;
+ 
+     for (i = 0; i < h->rps[ST_CURR_BEF].nb_refs; i++) {
+         frame = h->rps[ST_CURR_BEF].ref[i];
+-        if (frame && frame_buf_index == ff_v4l2_request_get_capture_index(frame->frame))
++        if (frame && frame_buf_tag == ff_v4l2_request_get_capture_tag(frame->frame))
+             return V4L2_HEVC_DPB_ENTRY_RPS_ST_CURR_BEFORE;
+     }
+ 
+     for (i = 0; i < h->rps[ST_CURR_AFT].nb_refs; i++) {
+         frame = h->rps[ST_CURR_AFT].ref[i];
+-        if (frame && frame_buf_index == ff_v4l2_request_get_capture_index(frame->frame))
++        if (frame && frame_buf_tag == ff_v4l2_request_get_capture_tag(frame->frame))
+             return V4L2_HEVC_DPB_ENTRY_RPS_ST_CURR_AFTER;
+     }
+ 
+     for (i = 0; i < h->rps[LT_CURR].nb_refs; i++) {
+         frame = h->rps[LT_CURR].ref[i];
+-        if (frame && frame_buf_index == ff_v4l2_request_get_capture_index(frame->frame))
++        if (frame && frame_buf_tag == ff_v4l2_request_get_capture_tag(frame->frame))
+             return V4L2_HEVC_DPB_ENTRY_RPS_LT_CURR;
+     }
+ 
+@@ -112,18 +112,18 @@ static int find_frame_rps_type(const HEVCContext *h, int frame_buf_index)
+ static uint8_t get_ref_pic_index(const HEVCContext *h, const HEVCFrame *frame,
+                                  struct v4l2_ctrl_hevc_slice_params *slice_params)
+ {
+-    int frame_buf_index;
++    int frame_buf_tag;
+     uint8_t i;
+ 
+     if (!frame)
+         return 0;
+ 
+-    frame_buf_index = ff_v4l2_request_get_capture_index(frame->frame);
++    frame_buf_tag = ff_v4l2_request_get_capture_tag(frame->frame);
+ 
+     for (i = 0; i < slice_params->num_active_dpb_entries; i++) {
+-        int buf_index = slice_params->dpb[i].buffer_index;
++        int buf_tag = slice_params->dpb[i].buffer_tag;
+         int poc = slice_params->dpb[i].pic_order_cnt[0];
+-        if (buf_index == frame_buf_index && poc == frame->poc)
++        if (buf_tag == frame_buf_tag && poc == frame->poc)
+             return i;
+     }
+ 
+@@ -186,8 +186,8 @@ static void v4l2_request_hevc_fill_slice_params(const HEVCContext *h,
+         if (frame != pic && (frame->flags & (HEVC_FRAME_FLAG_LONG_REF | HEVC_FRAME_FLAG_SHORT_REF))) {
+             struct v4l2_hevc_dpb_entry *entry = &slice_params->dpb[entries++];
+ 
+-            entry->buffer_index = ff_v4l2_request_get_capture_index(frame->frame);
+-            entry->rps = find_frame_rps_type(h, entry->buffer_index);
++            entry->buffer_tag = ff_v4l2_request_get_capture_tag(frame->frame);
++            entry->rps = find_frame_rps_type(h, entry->buffer_tag);
+             entry->field_pic = frame->frame->interlaced_frame;
+ 
+             /* TODO: Interleaved: Get the POC for each field. */
+diff --git a/libavcodec/v4l2_request_mpeg2.c b/libavcodec/v4l2_request_mpeg2.c
+index 4019071357..b462847578 100644
+--- a/libavcodec/v4l2_request_mpeg2.c
++++ b/libavcodec/v4l2_request_mpeg2.c
+@@ -76,10 +76,10 @@ static int v4l2_request_mpeg2_start_frame(AVCodecContext *avctx,
+ 
+     switch (s->pict_type) {
+     case AV_PICTURE_TYPE_B:
+-        controls->slice_params.backward_ref_index = ff_v4l2_request_get_capture_index(s->next_picture.f);
++        controls->slice_params.backward_ref_tag = ff_v4l2_request_get_capture_tag(s->next_picture.f);
+         // fall-through
+     case AV_PICTURE_TYPE_P:
+-        controls->slice_params.forward_ref_index = ff_v4l2_request_get_capture_index(s->last_picture.f);
++        controls->slice_params.forward_ref_tag = ff_v4l2_request_get_capture_tag(s->last_picture.f);
+     }
+ 
+     controls->quantization = (struct v4l2_ctrl_mpeg2_quantization) {
