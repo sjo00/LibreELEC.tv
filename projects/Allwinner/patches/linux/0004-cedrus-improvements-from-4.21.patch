@@ -1,0 +1,405 @@
+From 949f29f6071416f847ed8d2b2ad3a5f702583468 Mon Sep 17 00:00:00 2001
+From: Ezequiel Garcia <ezequiel@collabora.com>
+Date: Thu, 18 Oct 2018 14:02:24 -0400
+Subject: [PATCH] media: cedrus: Get rid of interrupt bottom-half
+
+Now that the mem2mem framework guarantees that .device_run
+won't be called from interrupt context, it is safe to call
+v4l2_m2m_job_finish directly in the top-half.
+
+So this means the bottom-half is no longer needed and we
+can get rid of it.
+
+Signed-off-by: Ezequiel Garcia <ezequiel@collabora.com>
+Acked-by: Paul Kocialkowski <paul.kocialkowski@bootlin.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ .../staging/media/sunxi/cedrus/cedrus_hw.c    | 26 ++++---------------
+ 1 file changed, 5 insertions(+), 21 deletions(-)
+
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+index 32adbcbe6175..493e65b17b30 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -98,23 +98,6 @@ void cedrus_dst_format_set(struct cedrus_dev *dev,
+ 	}
+ }
+ 
+-static irqreturn_t cedrus_bh(int irq, void *data)
+-{
+-	struct cedrus_dev *dev = data;
+-	struct cedrus_ctx *ctx;
+-
+-	ctx = v4l2_m2m_get_curr_priv(dev->m2m_dev);
+-	if (!ctx) {
+-		v4l2_err(&dev->v4l2_dev,
+-			 "Instance released before the end of transaction\n");
+-		return IRQ_HANDLED;
+-	}
+-
+-	v4l2_m2m_job_finish(ctx->dev->m2m_dev, ctx->fh.m2m_ctx);
+-
+-	return IRQ_HANDLED;
+-}
+-
+ static irqreturn_t cedrus_irq(int irq, void *data)
+ {
+ 	struct cedrus_dev *dev = data;
+@@ -165,7 +148,9 @@ static irqreturn_t cedrus_irq(int irq, void *data)
+ 
+ 	spin_unlock_irqrestore(&dev->irq_lock, flags);
+ 
+-	return IRQ_WAKE_THREAD;
++	v4l2_m2m_job_finish(ctx->dev->m2m_dev, ctx->fh.m2m_ctx);
++
++	return IRQ_HANDLED;
+ }
+ 
+ int cedrus_hw_probe(struct cedrus_dev *dev)
+@@ -187,9 +172,8 @@ int cedrus_hw_probe(struct cedrus_dev *dev)
+ 
+ 		return irq_dec;
+ 	}
+-	ret = devm_request_threaded_irq(dev->dev, irq_dec, cedrus_irq,
+-					cedrus_bh, 0, dev_name(dev->dev),
+-					dev);
++	ret = devm_request_irq(dev->dev, irq_dec, cedrus_irq,
++			       0, dev_name(dev->dev), dev);
+ 	if (ret) {
+ 		v4l2_err(&dev->v4l2_dev, "Failed to request IRQ\n");
+ 
+-- 
+2.20.1
+
+From 22f54602526ec9d199342da43dbb304f5726ba56 Mon Sep 17 00:00:00 2001
+From: Paul Kocialkowski <paul.kocialkowski@bootlin.com>
+Date: Fri, 30 Nov 2018 03:16:17 -0500
+Subject: [PATCH] media: cedrus: Remove global IRQ spin lock from the driver
+
+We initially introduced a spin lock to ensure that the VPU registers
+are not accessed concurrently between our setup function and IRQ
+handler. The V4L2 M2M API ensures that only one decoding job runs at a
+time, so the interrupt signaling the end of decoding will not occur
+while the next picture is being configured.
+
+Spurious interrupts are taken care of in the handler, by checking that
+we have a valid M2M context and a decoding status available before
+marking the buffers as done.
+
+In addition, holding a spin lock could be problematic if non-atomic
+operations are required in the setup process for future codec support.
+
+As a result, remove the global IRQ spin lock.
+
+Signed-off-by: Paul Kocialkowski <paul.kocialkowski@bootlin.com>
+Acked-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ drivers/staging/media/sunxi/cedrus/cedrus.c       |  1 -
+ drivers/staging/media/sunxi/cedrus/cedrus.h       |  2 --
+ drivers/staging/media/sunxi/cedrus/cedrus_dec.c   |  9 ---------
+ drivers/staging/media/sunxi/cedrus/cedrus_hw.c    | 13 +------------
+ drivers/staging/media/sunxi/cedrus/cedrus_video.c |  5 -----
+ 5 files changed, 1 insertion(+), 29 deletions(-)
+
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus.c b/drivers/staging/media/sunxi/cedrus/cedrus.c
+index b538eb0321d8..c28c70ac7c81 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.c
+@@ -279,7 +279,6 @@ static int cedrus_probe(struct platform_device *pdev)
+ 	dev->dec_ops[CEDRUS_CODEC_MPEG2] = &cedrus_dec_ops_mpeg2;
+ 
+ 	mutex_init(&dev->dev_mutex);
+-	spin_lock_init(&dev->irq_lock);
+ 
+ 	ret = v4l2_device_register(&pdev->dev, &dev->v4l2_dev);
+ 	if (ret) {
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus.h b/drivers/staging/media/sunxi/cedrus/cedrus.h
+index 3f61248c57ac..3acfdcf83691 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.h
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.h
+@@ -105,8 +105,6 @@ struct cedrus_dev {
+ 
+ 	/* Device file mutex */
+ 	struct mutex		dev_mutex;
+-	/* Interrupt spinlock */
+-	spinlock_t		irq_lock;
+ 
+ 	void __iomem		*base;
+ 
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+index e40180a33951..6c5e310a7cf7 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+@@ -28,7 +28,6 @@ void cedrus_device_run(void *priv)
+ 	struct cedrus_dev *dev = ctx->dev;
+ 	struct cedrus_run run = { 0 };
+ 	struct media_request *src_req;
+-	unsigned long flags;
+ 
+ 	run.src = v4l2_m2m_next_src_buf(ctx->fh.m2m_ctx);
+ 	run.dst = v4l2_m2m_next_dst_buf(ctx->fh.m2m_ctx);
+@@ -39,8 +38,6 @@ void cedrus_device_run(void *priv)
+ 	if (src_req)
+ 		v4l2_ctrl_request_setup(src_req, &ctx->hdl);
+ 
+-	spin_lock_irqsave(&ctx->dev->irq_lock, flags);
+-
+ 	switch (ctx->src_fmt.pixelformat) {
+ 	case V4L2_PIX_FMT_MPEG2_SLICE:
+ 		run.mpeg2.slice_params = cedrus_find_control_data(ctx,
+@@ -55,16 +52,10 @@ void cedrus_device_run(void *priv)
+ 
+ 	dev->dec_ops[ctx->current_codec]->setup(ctx, &run);
+ 
+-	spin_unlock_irqrestore(&ctx->dev->irq_lock, flags);
+-
+ 	/* Complete request(s) controls if needed. */
+ 
+ 	if (src_req)
+ 		v4l2_ctrl_request_complete(src_req, &ctx->hdl);
+ 
+-	spin_lock_irqsave(&ctx->dev->irq_lock, flags);
+-
+ 	dev->dec_ops[ctx->current_codec]->trigger(ctx);
+-
+-	spin_unlock_irqrestore(&ctx->dev->irq_lock, flags);
+ }
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+index 493e65b17b30..243592a5425e 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_hw.c
+@@ -105,24 +105,17 @@ static irqreturn_t cedrus_irq(int irq, void *data)
+ 	struct vb2_v4l2_buffer *src_buf, *dst_buf;
+ 	enum vb2_buffer_state state;
+ 	enum cedrus_irq_status status;
+-	unsigned long flags;
+-
+-	spin_lock_irqsave(&dev->irq_lock, flags);
+ 
+ 	ctx = v4l2_m2m_get_curr_priv(dev->m2m_dev);
+ 	if (!ctx) {
+ 		v4l2_err(&dev->v4l2_dev,
+ 			 "Instance released before the end of transaction\n");
+-		spin_unlock_irqrestore(&dev->irq_lock, flags);
+-
+ 		return IRQ_NONE;
+ 	}
+ 
+ 	status = dev->dec_ops[ctx->current_codec]->irq_status(ctx);
+-	if (status == CEDRUS_IRQ_NONE) {
+-		spin_unlock_irqrestore(&dev->irq_lock, flags);
++	if (status == CEDRUS_IRQ_NONE)
+ 		return IRQ_NONE;
+-	}
+ 
+ 	dev->dec_ops[ctx->current_codec]->irq_disable(ctx);
+ 	dev->dec_ops[ctx->current_codec]->irq_clear(ctx);
+@@ -133,8 +126,6 @@ static irqreturn_t cedrus_irq(int irq, void *data)
+ 	if (!src_buf || !dst_buf) {
+ 		v4l2_err(&dev->v4l2_dev,
+ 			 "Missing source and/or destination buffers\n");
+-		spin_unlock_irqrestore(&dev->irq_lock, flags);
+-
+ 		return IRQ_HANDLED;
+ 	}
+ 
+@@ -146,8 +137,6 @@ static irqreturn_t cedrus_irq(int irq, void *data)
+ 	v4l2_m2m_buf_done(src_buf, state);
+ 	v4l2_m2m_buf_done(dst_buf, state);
+ 
+-	spin_unlock_irqrestore(&dev->irq_lock, flags);
+-
+ 	v4l2_m2m_job_finish(ctx->dev->m2m_dev, ctx->fh.m2m_ctx);
+ 
+ 	return IRQ_HANDLED;
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus_video.c b/drivers/staging/media/sunxi/cedrus/cedrus_video.c
+index 5c5fce678b93..8721b4a7d496 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_video.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_video.c
+@@ -380,18 +380,13 @@ static void cedrus_queue_cleanup(struct vb2_queue *vq, u32 state)
+ {
+ 	struct cedrus_ctx *ctx = vb2_get_drv_priv(vq);
+ 	struct vb2_v4l2_buffer *vbuf;
+-	unsigned long flags;
+ 
+ 	for (;;) {
+-		spin_lock_irqsave(&ctx->dev->irq_lock, flags);
+-
+ 		if (V4L2_TYPE_IS_OUTPUT(vq->type))
+ 			vbuf = v4l2_m2m_src_buf_remove(ctx->fh.m2m_ctx);
+ 		else
+ 			vbuf = v4l2_m2m_dst_buf_remove(ctx->fh.m2m_ctx);
+ 
+-		spin_unlock_irqrestore(&ctx->dev->irq_lock, flags);
+-
+ 		if (!vbuf)
+ 			return;
+ 
+-- 
+2.20.1
+
+From 9ed5d5fb8b432badc967decf97e4294cbb216eef Mon Sep 17 00:00:00 2001
+From: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Date: Fri, 7 Dec 2018 06:13:48 -0500
+Subject: [PATCH] media: cetrus: return an error if alloc fails
+
+As warned by smatch:
+
+	drivers/staging/media/sunxi/cedrus/cedrus.c: drivers/staging/media/sunxi/cedrus/cedrus.c:93 cedrus_init_ctrls() error: potential null dereference 'ctx->ctrls'.  (kzalloc returns null)
+
+While here, remove the memset(), as kzalloc() already zeroes the
+struct.
+
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Acked-by: Paul Kocialkowski <paul.kocialkowski@bootlin.com>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ drivers/staging/media/sunxi/cedrus/cedrus.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus.c b/drivers/staging/media/sunxi/cedrus/cedrus.c
+index 67b18231ead6..4711df7ee5a3 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.c
+@@ -72,7 +72,8 @@ static int cedrus_init_ctrls(struct cedrus_dev *dev, struct cedrus_ctx *ctx)
+ 	ctrl_size = sizeof(ctrl) * CEDRUS_CONTROLS_COUNT + 1;
+ 
+ 	ctx->ctrls = kzalloc(ctrl_size, GFP_KERNEL);
+-	memset(ctx->ctrls, 0, ctrl_size);
++	if (!ctx->ctrls)
++		return -ENOMEM;
+ 
+ 	for (i = 0; i < CEDRUS_CONTROLS_COUNT; i++) {
+ 		struct v4l2_ctrl_config cfg = { 0 };
+-- 
+2.20.1
+
+From e4d7b113fdccde1acf8638c5879f2a450d492303 Mon Sep 17 00:00:00 2001
+From: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Date: Fri, 7 Dec 2018 08:03:16 -0500
+Subject: [PATCH] media: cedrus: don't initialize pointers with zero
+
+A common mistake is to assume that initializing a var with:
+	struct foo f = { 0 };
+
+Would initialize a zeroed struct. Actually, what this does is
+to initialize the first element of the struct to zero.
+
+According to C99 Standard 6.7.8.21:
+
+    "If there are fewer initializers in a brace-enclosed
+     list than there are elements or members of an aggregate,
+     or fewer characters in a string literal used to initialize
+     an array of known size than there are elements in the array,
+     the remainder of the aggregate shall be initialized implicitly
+     the same as objects that have static storage duration."
+
+So, in practice, it could zero the entire struct, but, if the
+first element is not an integer, it will produce warnings:
+
+	drivers/staging/media/sunxi/cedrus/cedrus.c:drivers/staging/media/sunxi/cedrus/cedrus.c:78:49:  warning: Using plain integer as NULL pointer
+	drivers/staging/media/sunxi/cedrus/cedrus_dec.c:drivers/staging/media/sunxi/cedrus/cedrus_dec.c:29:35:  warning: Using plain integer as NULL pointer
+
+As the right initialization would be, instead:
+
+	struct foo f = { NULL };
+
+Another way to initialize it with gcc is to use:
+
+	struct foo f = {};
+
+That seems to be a gcc extension, but clang also does the right thing,
+and that's a clean way for doing it.
+
+Anyway, I decided to check upstream what's the most commonly pattern.
+The "= {}" pattern has about 2000 entries:
+
+	$ git grep -E "=\s*\{\s*\}"|wc -l
+	1951
+
+The standard-C compliant pattern has about 2500 entries:
+
+	$ git grep -E "=\s*\{\s*NULL\s*\}"|wc -l
+	137
+	$ git grep -E "=\s*\{\s*0\s*\}"|wc -l
+	2323
+
+Meaning that developers have split options on that.
+
+So, let's opt to the simpler form.
+
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+Acked-by: Paul Kocialkowski <paul.kocialkowski@bootlin.com>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ drivers/staging/media/sunxi/cedrus/cedrus.c     | 2 +-
+ drivers/staging/media/sunxi/cedrus/cedrus_dec.c | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus.c b/drivers/staging/media/sunxi/cedrus/cedrus.c
+index 4711df7ee5a3..ff11cbeba205 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.c
+@@ -76,7 +76,7 @@ static int cedrus_init_ctrls(struct cedrus_dev *dev, struct cedrus_ctx *ctx)
+ 		return -ENOMEM;
+ 
+ 	for (i = 0; i < CEDRUS_CONTROLS_COUNT; i++) {
+-		struct v4l2_ctrl_config cfg = { 0 };
++		struct v4l2_ctrl_config cfg = {};
+ 
+ 		cfg.elem_size = cedrus_controls[i].elem_size;
+ 		cfg.id = cedrus_controls[i].id;
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+index 6c5e310a7cf7..591d191d4286 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus_dec.c
+@@ -26,7 +26,7 @@ void cedrus_device_run(void *priv)
+ {
+ 	struct cedrus_ctx *ctx = priv;
+ 	struct cedrus_dev *dev = ctx->dev;
+-	struct cedrus_run run = { 0 };
++	struct cedrus_run run = {};
+ 	struct media_request *src_req;
+ 
+ 	run.src = v4l2_m2m_next_src_buf(ctx->fh.m2m_ctx);
+-- 
+2.20.1
+
+From 39b8d20c432afe3724508f3df312b0c9f04b693e Mon Sep 17 00:00:00 2001
+From: kbuild test robot <fengguang.wu@intel.com>
+Date: Tue, 6 Nov 2018 19:33:19 +0800
+Subject: [PATCH 06/20] media: platform: fix platform_no_drv_owner.cocci
+ warnings
+
+drivers/staging/media/sunxi/cedrus/cedrus.c:421:3-8: No need to set .owner here. The core will do it.
+
+ Remove .owner field if calls are used which set it automatically
+
+Generated by: scripts/coccinelle/api/platform_no_drv_owner.cocci
+
+Fixes: 50e761516f2b ("media: platform: Add Cedrus VPU decoder driver")
+CC: Paul Kocialkowski <paul.kocialkowski@bootlin.com>
+Signed-off-by: kbuild test robot <fengguang.wu@intel.com>
+Acked-by: Maxime Ripard <maxime.ripard@bootlin.com>
+---
+ drivers/staging/media/sunxi/cedrus/cedrus.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/staging/media/sunxi/cedrus/cedrus.c b/drivers/staging/media/sunxi/cedrus/cedrus.c
+index 6dd82e94bfc0..f7f46fbc2bcf 100644
+--- a/drivers/staging/media/sunxi/cedrus/cedrus.c
++++ b/drivers/staging/media/sunxi/cedrus/cedrus.c
+@@ -420,7 +420,6 @@ static struct platform_driver cedrus_driver = {
+ 	.remove		= cedrus_remove,
+ 	.driver		= {
+ 		.name		= CEDRUS_NAME,
+-		.owner		= THIS_MODULE,
+ 		.of_match_table	= of_match_ptr(cedrus_dt_match),
+ 	},
+ };
+-- 
+2.20.0
+

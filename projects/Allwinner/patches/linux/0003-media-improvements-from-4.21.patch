@@ -1,0 +1,517 @@
+From 913f3ec280abddc111a49287a59b658b6b181c4c Mon Sep 17 00:00:00 2001
+From: Ezequiel Garcia <ezequiel@collabora.com>
+Date: Thu, 18 Oct 2018 14:02:20 -0400
+Subject: [PATCH] media: mem2mem: Require capture and output mutexes to match
+
+Currently, all the mem2mem driver either use a single mutex
+to lock the capture and output videobuf2 queues, or don't
+set any mutex.
+
+This means the mutexes match, and so the mem2mem framework
+is able to set the m2m context lock.
+
+Enforce this by making it mandatory for drivers to set
+the same capture and output mutex, or not set any mutex at all.
+
+Signed-off-by: Ezequiel Garcia <ezequiel@collabora.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ drivers/media/v4l2-core/v4l2-mem2mem.c | 12 +++++++-----
+ 1 file changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-mem2mem.c b/drivers/media/v4l2-core/v4l2-mem2mem.c
+index 1ed2465972ac..932728841a38 100644
+--- a/drivers/media/v4l2-core/v4l2-mem2mem.c
++++ b/drivers/media/v4l2-core/v4l2-mem2mem.c
+@@ -908,12 +908,14 @@ struct v4l2_m2m_ctx *v4l2_m2m_ctx_init(struct v4l2_m2m_dev *m2m_dev,
+ 	if (ret)
+ 		goto err;
+ 	/*
+-	 * If both queues use same mutex assign it as the common buffer
+-	 * queues lock to the m2m context. This lock is used in the
+-	 * v4l2_m2m_ioctl_* helpers.
++	 * Both queues should use same the mutex to lock the m2m context.
++	 * This lock is used in some v4l2_m2m_* helpers.
+ 	 */
+-	if (out_q_ctx->q.lock == cap_q_ctx->q.lock)
+-		m2m_ctx->q_lock = out_q_ctx->q.lock;
++	if (WARN_ON(out_q_ctx->q.lock != cap_q_ctx->q.lock)) {
++		ret = -EINVAL;
++		goto err;
++	}
++	m2m_ctx->q_lock = out_q_ctx->q.lock;
+ 
+ 	return m2m_ctx;
+ err:
+-- 
+2.20.1
+
+From 542a522d32efb613cfc929bdbf2c4160359167f9 Mon Sep 17 00:00:00 2001
+From: Ezequiel Garcia <ezequiel@collabora.com>
+Date: Thu, 18 Oct 2018 14:02:21 -0400
+Subject: [PATCH] media: v4l2-ioctl.c: Simplify locking for m2m devices
+
+Now that the mutexes for output and capture vb2 queues match,
+it is possible to refer to the context q_lock as the
+m2m lock for a given m2m context.
+
+Remove the output/capture lock selection.
+
+Signed-off-by: Ezequiel Garcia <ezequiel@collabora.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ drivers/media/v4l2-core/v4l2-ioctl.c | 47 ++--------------------------
+ 1 file changed, 2 insertions(+), 45 deletions(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-ioctl.c b/drivers/media/v4l2-core/v4l2-ioctl.c
+index f41d1ac21977..e384142d2826 100644
+--- a/drivers/media/v4l2-core/v4l2-ioctl.c
++++ b/drivers/media/v4l2-core/v4l2-ioctl.c
+@@ -2693,45 +2693,6 @@ static bool v4l2_is_known_ioctl(unsigned int cmd)
+ 	return v4l2_ioctls[_IOC_NR(cmd)].ioctl == cmd;
+ }
+ 
+-#if IS_ENABLED(CONFIG_V4L2_MEM2MEM_DEV)
+-static bool v4l2_ioctl_m2m_queue_is_output(unsigned int cmd, void *arg)
+-{
+-	switch (cmd) {
+-	case VIDIOC_CREATE_BUFS: {
+-		struct v4l2_create_buffers *cbufs = arg;
+-
+-		return V4L2_TYPE_IS_OUTPUT(cbufs->format.type);
+-	}
+-	case VIDIOC_REQBUFS: {
+-		struct v4l2_requestbuffers *rbufs = arg;
+-
+-		return V4L2_TYPE_IS_OUTPUT(rbufs->type);
+-	}
+-	case VIDIOC_QBUF:
+-	case VIDIOC_DQBUF:
+-	case VIDIOC_QUERYBUF:
+-	case VIDIOC_PREPARE_BUF: {
+-		struct v4l2_buffer *buf = arg;
+-
+-		return V4L2_TYPE_IS_OUTPUT(buf->type);
+-	}
+-	case VIDIOC_EXPBUF: {
+-		struct v4l2_exportbuffer *expbuf = arg;
+-
+-		return V4L2_TYPE_IS_OUTPUT(expbuf->type);
+-	}
+-	case VIDIOC_STREAMON:
+-	case VIDIOC_STREAMOFF: {
+-		int *type = arg;
+-
+-		return V4L2_TYPE_IS_OUTPUT(*type);
+-	}
+-	default:
+-		return false;
+-	}
+-}
+-#endif
+-
+ static struct mutex *v4l2_ioctl_get_lock(struct video_device *vdev,
+ 					 struct v4l2_fh *vfh, unsigned int cmd,
+ 					 void *arg)
+@@ -2741,12 +2702,8 @@ static struct mutex *v4l2_ioctl_get_lock(struct video_device *vdev,
+ #if IS_ENABLED(CONFIG_V4L2_MEM2MEM_DEV)
+ 	if (vfh && vfh->m2m_ctx &&
+ 	    (v4l2_ioctls[_IOC_NR(cmd)].flags & INFO_FL_QUEUE)) {
+-		bool is_output = v4l2_ioctl_m2m_queue_is_output(cmd, arg);
+-		struct v4l2_m2m_queue_ctx *ctx = is_output ?
+-			&vfh->m2m_ctx->out_q_ctx : &vfh->m2m_ctx->cap_q_ctx;
+-
+-		if (ctx->q.lock)
+-			return ctx->q.lock;
++		if (vfh->m2m_ctx->q_lock)
++			return vfh->m2m_ctx->q_lock;
+ 	}
+ #endif
+ 	if (vdev->queue && vdev->queue->lock &&
+-- 
+2.20.1
+
+From cbec2836f8be61ca573d48efe8803929100d4cba Mon Sep 17 00:00:00 2001
+From: Sakari Ailus <sakari.ailus@linux.intel.com>
+Date: Thu, 18 Oct 2018 14:02:22 -0400
+Subject: [PATCH] media: v4l2-mem2mem: Simplify exiting the function in
+ __v4l2_m2m_try_schedule
+
+The __v4l2_m2m_try_schedule function acquires and releases multiple
+spinlocks. Simplify unlocking the job lock by adding labels to unlock
+the lock and exit the function.
+
+Signed-off-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Ezequiel Garcia <ezequiel@collabora.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ drivers/media/v4l2-core/v4l2-mem2mem.c | 29 ++++++++++++--------------
+ 1 file changed, 13 insertions(+), 16 deletions(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-mem2mem.c b/drivers/media/v4l2-core/v4l2-mem2mem.c
+index 932728841a38..2307fcc663ec 100644
+--- a/drivers/media/v4l2-core/v4l2-mem2mem.c
++++ b/drivers/media/v4l2-core/v4l2-mem2mem.c
+@@ -297,51 +297,48 @@ static void __v4l2_m2m_try_queue(struct v4l2_m2m_dev *m2m_dev,
+ 
+ 	/* If the context is aborted then don't schedule it */
+ 	if (m2m_ctx->job_flags & TRANS_ABORT) {
+-		spin_unlock_irqrestore(&m2m_dev->job_spinlock, flags_job);
+ 		dprintk("Aborted context\n");
+-		return;
++		goto job_unlock;
+ 	}
+ 
+ 	if (m2m_ctx->job_flags & TRANS_QUEUED) {
+-		spin_unlock_irqrestore(&m2m_dev->job_spinlock, flags_job);
+ 		dprintk("On job queue already\n");
+-		return;
++		goto job_unlock;
+ 	}
+ 
+ 	spin_lock_irqsave(&m2m_ctx->out_q_ctx.rdy_spinlock, flags_out);
+ 	if (list_empty(&m2m_ctx->out_q_ctx.rdy_queue)
+ 	    && !m2m_ctx->out_q_ctx.buffered) {
+-		spin_unlock_irqrestore(&m2m_ctx->out_q_ctx.rdy_spinlock,
+-					flags_out);
+-		spin_unlock_irqrestore(&m2m_dev->job_spinlock, flags_job);
+ 		dprintk("No input buffers available\n");
+-		return;
++		goto out_unlock;
+ 	}
+ 	spin_lock_irqsave(&m2m_ctx->cap_q_ctx.rdy_spinlock, flags_cap);
+ 	if (list_empty(&m2m_ctx->cap_q_ctx.rdy_queue)
+ 	    && !m2m_ctx->cap_q_ctx.buffered) {
+-		spin_unlock_irqrestore(&m2m_ctx->cap_q_ctx.rdy_spinlock,
+-					flags_cap);
+-		spin_unlock_irqrestore(&m2m_ctx->out_q_ctx.rdy_spinlock,
+-					flags_out);
+-		spin_unlock_irqrestore(&m2m_dev->job_spinlock, flags_job);
+ 		dprintk("No output buffers available\n");
+-		return;
++		goto cap_unlock;
+ 	}
+ 	spin_unlock_irqrestore(&m2m_ctx->cap_q_ctx.rdy_spinlock, flags_cap);
+ 	spin_unlock_irqrestore(&m2m_ctx->out_q_ctx.rdy_spinlock, flags_out);
+ 
+ 	if (m2m_dev->m2m_ops->job_ready
+ 		&& (!m2m_dev->m2m_ops->job_ready(m2m_ctx->priv))) {
+-		spin_unlock_irqrestore(&m2m_dev->job_spinlock, flags_job);
+ 		dprintk("Driver not ready\n");
+-		return;
++		goto job_unlock;
+ 	}
+ 
+ 	list_add_tail(&m2m_ctx->queue, &m2m_dev->job_queue);
+ 	m2m_ctx->job_flags |= TRANS_QUEUED;
+ 
+ 	spin_unlock_irqrestore(&m2m_dev->job_spinlock, flags_job);
++	return;
++
++cap_unlock:
++	spin_unlock_irqrestore(&m2m_ctx->cap_q_ctx.rdy_spinlock, flags_cap);
++out_unlock:
++	spin_unlock_irqrestore(&m2m_ctx->out_q_ctx.rdy_spinlock, flags_out);
++job_unlock:
++	spin_unlock_irqrestore(&m2m_dev->job_spinlock, flags_job);
+ }
+ 
+ /**
+-- 
+2.20.1
+
+From cbd9463da1b12cdf9aa79e7cf470431d39131fca Mon Sep 17 00:00:00 2001
+From: Ezequiel Garcia <ezequiel@collabora.com>
+Date: Thu, 18 Oct 2018 14:02:23 -0400
+Subject: [PATCH] media: v4l2-mem2mem: Avoid calling .device_run in
+ v4l2_m2m_job_finish
+
+v4l2_m2m_job_finish() is typically called when
+DMA operations complete, in interrupt handlers or DMA
+completion callbacks. Calling .device_run from v4l2_m2m_job_finish
+creates a nasty re-entrancy path into the driver.
+
+Moreover, some implementation of .device_run might need to sleep,
+as is the case for drivers supporting the Request API,
+where controls are applied via v4l2_ctrl_request_setup,
+which takes the ctrl handler mutex.
+
+This commit adds a deferred context that calls v4l2_m2m_try_run,
+and gets scheduled by v4l2_m2m_job_finish().
+
+Before this change, device_run would be called from these
+paths:
+
+vb2_m2m_request_queue, or
+v4l2_m2m_streamon, or
+v4l2_m2m_qbuf
+  v4l2_m2m_try_schedule
+    v4l2_m2m_try_run
+      .device_run
+
+v4l2_m2m_job_finish
+  v4l2_m2m_try_run
+    .device_run
+
+After this change, the latter is now gone and instead:
+
+v4l2_m2m_device_run_work
+  v4l2_m2m_try_run
+    .device_run
+
+Signed-off-by: Ezequiel Garcia <ezequiel@collabora.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ drivers/media/v4l2-core/v4l2-mem2mem.c | 25 ++++++++++++++++++++++++-
+ 1 file changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-mem2mem.c b/drivers/media/v4l2-core/v4l2-mem2mem.c
+index 2307fcc663ec..5bbdec55b7d7 100644
+--- a/drivers/media/v4l2-core/v4l2-mem2mem.c
++++ b/drivers/media/v4l2-core/v4l2-mem2mem.c
+@@ -87,6 +87,7 @@ static const char * const m2m_entity_name[] = {
+  * @curr_ctx:		currently running instance
+  * @job_queue:		instances queued to run
+  * @job_spinlock:	protects job_queue
++ * @job_work:		worker to run queued jobs.
+  * @m2m_ops:		driver callbacks
+  */
+ struct v4l2_m2m_dev {
+@@ -103,6 +104,7 @@ struct v4l2_m2m_dev {
+ 
+ 	struct list_head	job_queue;
+ 	spinlock_t		job_spinlock;
++	struct work_struct	job_work;
+ 
+ 	const struct v4l2_m2m_ops *m2m_ops;
+ };
+@@ -244,6 +246,9 @@ EXPORT_SYMBOL(v4l2_m2m_get_curr_priv);
+  * @m2m_dev: per-device context
+  *
+  * Get next transaction (if present) from the waiting jobs list and run it.
++ *
++ * Note that this function can run on a given v4l2_m2m_ctx context,
++ * but call .device_run for another context.
+  */
+ static void v4l2_m2m_try_run(struct v4l2_m2m_dev *m2m_dev)
+ {
+@@ -362,6 +367,18 @@ void v4l2_m2m_try_schedule(struct v4l2_m2m_ctx *m2m_ctx)
+ }
+ EXPORT_SYMBOL_GPL(v4l2_m2m_try_schedule);
+ 
++/**
++ * v4l2_m2m_device_run_work() - run pending jobs for the context
++ * @work: Work structure used for scheduling the execution of this function.
++ */
++static void v4l2_m2m_device_run_work(struct work_struct *work)
++{
++	struct v4l2_m2m_dev *m2m_dev =
++		container_of(work, struct v4l2_m2m_dev, job_work);
++
++	v4l2_m2m_try_run(m2m_dev);
++}
++
+ /**
+  * v4l2_m2m_cancel_job() - cancel pending jobs for the context
+  * @m2m_ctx: m2m context with jobs to be canceled
+@@ -421,7 +438,12 @@ void v4l2_m2m_job_finish(struct v4l2_m2m_dev *m2m_dev,
+ 	/* This instance might have more buffers ready, but since we do not
+ 	 * allow more than one job on the job_queue per instance, each has
+ 	 * to be scheduled separately after the previous one finishes. */
+-	v4l2_m2m_try_schedule(m2m_ctx);
++	__v4l2_m2m_try_queue(m2m_dev, m2m_ctx);
++
++	/* We might be running in atomic context,
++	 * but the job must be run in non-atomic context.
++	 */
++	schedule_work(&m2m_dev->job_work);
+ }
+ EXPORT_SYMBOL(v4l2_m2m_job_finish);
+ 
+@@ -863,6 +885,7 @@ struct v4l2_m2m_dev *v4l2_m2m_init(const struct v4l2_m2m_ops *m2m_ops)
+ 	m2m_dev->m2m_ops = m2m_ops;
+ 	INIT_LIST_HEAD(&m2m_dev->job_queue);
+ 	spin_lock_init(&m2m_dev->job_spinlock);
++	INIT_WORK(&m2m_dev->job_work, v4l2_m2m_device_run_work);
+ 
+ 	return m2m_dev;
+ }
+-- 
+2.20.1
+
+From d644cca50f366cd109845ae92e37c09ed79adf81 Mon Sep 17 00:00:00 2001
+From: John Sheu <sheu@chromium.org>
+Date: Thu, 15 Nov 2018 10:57:16 -0500
+Subject: [PATCH] media: vb2: Allow reqbufs(0) with "in use" MMAP buffers
+
+Videobuf2 presently does not allow VIDIOC_REQBUFS to destroy outstanding
+buffers if the queue is of type V4L2_MEMORY_MMAP, and if the buffers are
+considered "in use".  This is different behavior than for other memory
+types and prevents us from deallocating buffers in following two cases:
+
+1) There are outstanding mmap()ed views on the buffer. However even if
+   we put the buffer in reqbufs(0), there will be remaining references,
+   due to vma .open/close() adjusting vb2 buffer refcount appropriately.
+   This means that the buffer will be in fact freed only when the last
+   mmap()ed view is unmapped.
+
+2) Buffer has been exported as a DMABUF. Refcount of the vb2 buffer
+   is managed properly by VB2 DMABUF ops, i.e. incremented on DMABUF
+   get and decremented on DMABUF release. This means that the buffer
+   will be alive until all importers release it.
+
+Considering both cases above, there does not seem to be any need to
+prevent reqbufs(0) operation, because buffer lifetime is already
+properly managed by both mmap() and DMABUF code paths. Let's remove it
+and allow userspace freeing the queue (and potentially allocating a new
+one) even though old buffers might be still in processing.
+
+To let userspace know that the kernel now supports orphaning buffers
+that are still in use, add a new V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS
+to be set by reqbufs and create_bufs.
+
+[p.zabel@pengutronix.de: added V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS,
+ updated documentation, and added back debug message]
+
+Signed-off-by: John Sheu <sheu@chromium.org>
+Reviewed-by: Pawel Osciak <posciak@chromium.org>
+Signed-off-by: Tomasz Figa <tfiga@chromium.org>
+Signed-off-by: Philipp Zabel <p.zabel@pengutronix.de>
+Acked-by: Sakari Ailus <sakari.ailus@linux.intel.com>
+Signed-off-by: Hans Verkuil <hverkuil-cisco@xs4all.nl>
+[hverkuil-cisco@xs4all.nl: added V4L2-BUF-CAP-SUPPORTS-ORPHANED-BUFS ref]
+Signed-off-by: Mauro Carvalho Chehab <mchehab+samsung@kernel.org>
+---
+ Documentation/media/uapi/v4l/vidioc-reqbufs.rst | 17 ++++++++++++++---
+ drivers/media/common/videobuf2/videobuf2-core.c |  8 +++-----
+ drivers/media/common/videobuf2/videobuf2-v4l2.c |  2 +-
+ include/uapi/linux/videodev2.h                  |  1 +
+ 4 files changed, 19 insertions(+), 9 deletions(-)
+
+diff --git a/Documentation/media/uapi/v4l/vidioc-reqbufs.rst b/Documentation/media/uapi/v4l/vidioc-reqbufs.rst
+index d4bbbb0c60e8..e62a15782790 100644
+--- a/Documentation/media/uapi/v4l/vidioc-reqbufs.rst
++++ b/Documentation/media/uapi/v4l/vidioc-reqbufs.rst
+@@ -59,9 +59,14 @@ When the I/O method is not supported the ioctl returns an ``EINVAL`` error
+ code.
+ 
+ Applications can call :ref:`VIDIOC_REQBUFS` again to change the number of
+-buffers, however this cannot succeed when any buffers are still mapped.
+-A ``count`` value of zero frees all buffers, after aborting or finishing
+-any DMA in progress, an implicit
++buffers. Note that if any buffers are still mapped or exported via DMABUF,
++then :ref:`VIDIOC_REQBUFS` can only succeed if the
++``V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS`` capability is set. Otherwise
++:ref:`VIDIOC_REQBUFS` will return the ``EBUSY`` error code.
++If ``V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS`` is set, then these buffers are
++orphaned and will be freed when they are unmapped or when the exported DMABUF
++fds are closed. A ``count`` value of zero frees or orphans all buffers, after
++aborting or finishing any DMA in progress, an implicit
+ :ref:`VIDIOC_STREAMOFF <VIDIOC_STREAMON>`.
+ 
+ 
+@@ -112,6 +117,7 @@ any DMA in progress, an implicit
+ .. _V4L2-BUF-CAP-SUPPORTS-USERPTR:
+ .. _V4L2-BUF-CAP-SUPPORTS-DMABUF:
+ .. _V4L2-BUF-CAP-SUPPORTS-REQUESTS:
++.. _V4L2-BUF-CAP-SUPPORTS-ORPHANED-BUFS:
+ 
+ .. cssclass:: longtable
+ 
+@@ -132,6 +138,11 @@ any DMA in progress, an implicit
+     * - ``V4L2_BUF_CAP_SUPPORTS_REQUESTS``
+       - 0x00000008
+       - This buffer type supports :ref:`requests <media-request-api>`.
++    * - ``V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS``
++      - 0x00000010
++      - The kernel allows calling :ref:`VIDIOC_REQBUFS` while buffers are still
++        mapped or exported via DMABUF. These orphaned buffers will be freed
++        when they are unmapped or when the exported DMABUF fds are closed.
+ 
+ Return Value
+ ============
+diff --git a/drivers/media/common/videobuf2/videobuf2-core.c b/drivers/media/common/videobuf2/videobuf2-core.c
+index 03954c13024c..04d1250747cf 100644
+--- a/drivers/media/common/videobuf2/videobuf2-core.c
++++ b/drivers/media/common/videobuf2/videobuf2-core.c
+@@ -679,11 +679,9 @@ int vb2_core_reqbufs(struct vb2_queue *q, enum vb2_memory memory,
+ 		 * are not in use and can be freed.
+ 		 */
+ 		mutex_lock(&q->mmap_lock);
+-		if (q->memory == VB2_MEMORY_MMAP && __buffers_in_use(q)) {
+-			mutex_unlock(&q->mmap_lock);
+-			dprintk(1, "memory in use, cannot free\n");
+-			return -EBUSY;
+-		}
++		if (debug && q->memory == VB2_MEMORY_MMAP &&
++		    __buffers_in_use(q))
++			dprintk(1, "memory in use, orphaning buffers\n");
+ 
+ 		/*
+ 		 * Call queue_cancel to clean up any buffers in the
+diff --git a/drivers/media/common/videobuf2/videobuf2-v4l2.c b/drivers/media/common/videobuf2/videobuf2-v4l2.c
+index a17033ab2c22..f02d452ceeb9 100644
+--- a/drivers/media/common/videobuf2/videobuf2-v4l2.c
++++ b/drivers/media/common/videobuf2/videobuf2-v4l2.c
+@@ -624,7 +624,7 @@ EXPORT_SYMBOL(vb2_querybuf);
+ 
+ static void fill_buf_caps(struct vb2_queue *q, u32 *caps)
+ {
+-	*caps = 0;
++	*caps = V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS;
+ 	if (q->io_modes & VB2_MMAP)
+ 		*caps |= V4L2_BUF_CAP_SUPPORTS_MMAP;
+ 	if (q->io_modes & VB2_USERPTR)
+diff --git a/include/uapi/linux/videodev2.h b/include/uapi/linux/videodev2.h
+index c8e8ff810190..2a223835214c 100644
+--- a/include/uapi/linux/videodev2.h
++++ b/include/uapi/linux/videodev2.h
+@@ -879,6 +879,7 @@ struct v4l2_requestbuffers {
+ #define V4L2_BUF_CAP_SUPPORTS_USERPTR	(1 << 1)
+ #define V4L2_BUF_CAP_SUPPORTS_DMABUF	(1 << 2)
+ #define V4L2_BUF_CAP_SUPPORTS_REQUESTS	(1 << 3)
++#define V4L2_BUF_CAP_SUPPORTS_ORPHANED_BUFS (1 << 4)
+ 
+ /**
+  * struct v4l2_plane - plane info for multi-planar buffers
+-- 
+2.20.1
+
+From ead7270c1ac2c25ee3f6439f3e5e23b963f7a261 Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Sun, 25 Nov 2018 15:21:42 +0000
+Subject: [PATCH 09/20] media: v4l: Fix MPEG-2 slice Intra DC Precision
+ validation
+
+intra_dc_precision is a 2-bit integer [1]
+allow use of all valid options, 8 - 11 bits precision
+
+[1] ISO/IEC 13818-2 Table 6-13
+
+Fixes: c27bb30e7b6d ("media: v4l: Add definitions for MPEG-2 slice format and metadata")
+Signed-off-by: Jonas Karlman <jonas@kwiboo.se>
+---
+ drivers/media/v4l2-core/v4l2-ctrls.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/media/v4l2-core/v4l2-ctrls.c b/drivers/media/v4l2-core/v4l2-ctrls.c
+index 5f2b033a7a42..129a986fa7e1 100644
+--- a/drivers/media/v4l2-core/v4l2-ctrls.c
++++ b/drivers/media/v4l2-core/v4l2-ctrls.c
+@@ -1636,7 +1636,8 @@ static int std_validate(const struct v4l2_ctrl *ctrl, u32 idx,
+ 		switch (p_mpeg2_slice_params->picture.intra_dc_precision) {
+ 		case 0: /* 8 bits */
+ 		case 1: /* 9 bits */
+-		case 11: /* 11 bits */
++		case 2: /* 10 bits */
++		case 3: /* 11 bits */
+ 			break;
+ 		default:
+ 			return -EINVAL;
+-- 
+2.20.0
+

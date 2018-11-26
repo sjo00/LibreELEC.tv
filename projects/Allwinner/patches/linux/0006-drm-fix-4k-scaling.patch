@@ -1,0 +1,209 @@
+From 09774ceab7f37555b81e1cebe12a3fb46697ff12 Mon Sep 17 00:00:00 2001
+From: Jernej Skrabec <jernej.skrabec@siol.net>
+Date: Mon, 24 Dec 2018 18:11:56 +0100
+Subject: [PATCH 1/2] drm/sun4i: Add VI scaler line size quirk for DE2/DE3
+
+Scalers have maximum line size of 2048, except for VI scaler on mixer0
+on H6, which has line size of 4096.
+
+Because this seems to be SoC specific, add a quirk for it.
+
+Signed-off-by: Jernej Skrabec <jernej.skrabec@siol.net>
+---
+ drivers/gpu/drm/sun4i/sun8i_mixer.c | 9 +++++++++
+ drivers/gpu/drm/sun4i/sun8i_mixer.h | 2 ++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/drivers/gpu/drm/sun4i/sun8i_mixer.c b/drivers/gpu/drm/sun4i/sun8i_mixer.c
+index 44a9ba7d8433..3a3f42aad310 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_mixer.c
++++ b/drivers/gpu/drm/sun4i/sun8i_mixer.c
+@@ -554,6 +554,7 @@ static int sun8i_mixer_remove(struct platform_device *pdev)
+ static const struct sun8i_mixer_cfg sun8i_a83t_mixer0_cfg = {
+ 	.ccsc		= 0,
+ 	.scaler_mask	= 0xf,
++	.scanline_yuv	= 2048,
+ 	.ui_num		= 3,
+ 	.vi_num		= 1,
+ };
+@@ -561,6 +562,7 @@ static const struct sun8i_mixer_cfg sun8i_a83t_mixer0_cfg = {
+ static const struct sun8i_mixer_cfg sun8i_a83t_mixer1_cfg = {
+ 	.ccsc		= 1,
+ 	.scaler_mask	= 0x3,
++	.scanline_yuv	= 2048,
+ 	.ui_num		= 1,
+ 	.vi_num		= 1,
+ };
+@@ -569,6 +571,7 @@ static const struct sun8i_mixer_cfg sun8i_h3_mixer0_cfg = {
+ 	.ccsc		= 0,
+ 	.mod_rate	= 432000000,
+ 	.scaler_mask	= 0xf,
++	.scanline_yuv	= 2048,
+ 	.ui_num		= 3,
+ 	.vi_num		= 1,
+ };
+@@ -577,6 +580,7 @@ static const struct sun8i_mixer_cfg sun8i_r40_mixer0_cfg = {
+ 	.ccsc		= 0,
+ 	.mod_rate	= 297000000,
+ 	.scaler_mask	= 0xf,
++	.scanline_yuv	= 2048,
+ 	.ui_num		= 3,
+ 	.vi_num		= 1,
+ };
+@@ -585,6 +589,7 @@ static const struct sun8i_mixer_cfg sun8i_r40_mixer1_cfg = {
+ 	.ccsc		= 1,
+ 	.mod_rate	= 297000000,
+ 	.scaler_mask	= 0x3,
++	.scanline_yuv	= 2048,
+ 	.ui_num		= 1,
+ 	.vi_num		= 1,
+ };
+@@ -593,6 +598,7 @@ static const struct sun8i_mixer_cfg sun8i_v3s_mixer_cfg = {
+ 	.vi_num = 2,
+ 	.ui_num = 1,
+ 	.scaler_mask = 0x3,
++	.scanline_yuv = 2048,
+ 	.ccsc = 0,
+ 	.mod_rate = 150000000,
+ };
+@@ -601,6 +607,7 @@ static const struct sun8i_mixer_cfg sun50i_a64_mixer0_cfg = {
+ 	.ccsc		= 0,
+ 	.mod_rate	= 297000000,
+ 	.scaler_mask	= 0xf,
++	.scanline_yuv	= 2048,
+ 	.ui_num		= 3,
+ 	.vi_num		= 1,
+ };
+@@ -609,6 +616,7 @@ static const struct sun8i_mixer_cfg sun50i_a64_mixer1_cfg = {
+ 	.ccsc		= 1,
+ 	.mod_rate	= 297000000,
+ 	.scaler_mask	= 0x3,
++	.scanline_yuv	= 2048,
+ 	.ui_num		= 1,
+ 	.vi_num		= 1,
+ };
+diff --git a/drivers/gpu/drm/sun4i/sun8i_mixer.h b/drivers/gpu/drm/sun4i/sun8i_mixer.h
+index 913d14ce68b0..80e084caa084 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_mixer.h
++++ b/drivers/gpu/drm/sun4i/sun8i_mixer.h
+@@ -167,6 +168,7 @@ struct sun8i_mixer_cfg {
+ 	int		scaler_mask;
+ 	int		ccsc;
+ 	unsigned long	mod_rate;
++	unsigned int	scanline_yuv;
+ };
+ 
+ struct sun8i_mixer {
+-- 
+2.20.1
+
+
+From 5eedaa11f4b32d978e4a30e3895c2737609783e5 Mon Sep 17 00:00:00 2001
+From: Jernej Skrabec <jernej.skrabec@siol.net>
+Date: Mon, 24 Dec 2018 18:16:50 +0100
+Subject: [PATCH 2/2] drm/sun4i: Improve VI scaling
+
+Currently, if framebuffer width is bigger than VI scaler line size,
+output will be mangled.
+
+In order to fix this, add coarse scaling to VI layer, which will scale
+down to max. VI scaler line size. That way, VI scaler will be capable to
+scale down image correctly.
+
+Coarse scaling just skips appropriate amount of pixels to fit requested
+width. That way needed memory bandwidth is also lower.
+
+Further improvements are possible, like doing coarse scaling
+horizontally or vertically to overcome maximum supported scaling factor
+supported by VI scaler.
+
+Unfortunately, coarse scaling is supported only on VI channels.
+
+Signed-off-by: Jernej Skrabec <jernej.skrabec@siol.net>
+---
+ drivers/gpu/drm/sun4i/sun8i_vi_layer.c | 21 ++++++++++++++++++++-
+ drivers/gpu/drm/sun4i/sun8i_vi_layer.h | 11 +++++++++++
+ 2 files changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/sun4i/sun8i_vi_layer.c b/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
+index 87be898f9b7a..db984c0b2a49 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
++++ b/drivers/gpu/drm/sun4i/sun8i_vi_layer.c
+@@ -80,6 +80,7 @@ static int sun8i_vi_layer_update_coord(struct sun8i_mixer *mixer, int channel,
+ 	u32 bld_base, ch_base;
+ 	u32 outsize, insize;
+ 	u32 hphase, vphase;
++	u32 hn = 0, hm = 0;
+ 	bool subsampled;
+ 
+ 	DRM_DEBUG_DRIVER("Updating VI channel %d overlay %d\n",
+@@ -137,11 +138,20 @@ static int sun8i_vi_layer_update_coord(struct sun8i_mixer *mixer, int channel,
+ 	subsampled = format->hsub > 1 || format->vsub > 1;
+ 
+ 	if (insize != outsize || subsampled || hphase || vphase) {
++		unsigned int scanline;
+ 		u32 hscale, vscale;
+ 
+ 		DRM_DEBUG_DRIVER("HW scaling is enabled\n");
+ 
+-		hscale = state->src_w / state->crtc_w;
++		scanline = subsampled ? mixer->cfg->scanline_yuv : 2048;
++
++		if (src_w > scanline) {
++			hm = src_w;
++			hn = scanline;
++			src_w = scanline;
++		}
++
++		hscale = (src_w << 16) / dst_w;
+ 		vscale = state->src_h / state->crtc_h;
+ 
+ 		sun8i_vi_scaler_setup(mixer, channel, src_w, src_h, dst_w,
+@@ -153,6 +163,15 @@ static int sun8i_vi_layer_update_coord(struct sun8i_mixer *mixer, int channel,
+ 		sun8i_vi_scaler_enable(mixer, channel, false);
+ 	}
+ 
++	regmap_write(mixer->engine.regs,
++		     SUN8I_MIXER_CHAN_VI_HDS_Y(channel),
++		     SUN8I_MIXER_CHAN_VI_DS_N(hn) |
++		     SUN8I_MIXER_CHAN_VI_DS_M(hm));
++	regmap_write(mixer->engine.regs,
++		     SUN8I_MIXER_CHAN_VI_HDS_UV(channel),
++		     SUN8I_MIXER_CHAN_VI_DS_N(hn) |
++		     SUN8I_MIXER_CHAN_VI_DS_M(hm));
++
+ 	/* Set base coordinates */
+ 	DRM_DEBUG_DRIVER("Layer destination coordinates X: %d Y: %d\n",
+ 			 state->dst.x1, state->dst.y1);
+diff --git a/drivers/gpu/drm/sun4i/sun8i_vi_layer.h b/drivers/gpu/drm/sun4i/sun8i_vi_layer.h
+index 8a5e6d01c85d..a223a4839f45 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_vi_layer.h
++++ b/drivers/gpu/drm/sun4i/sun8i_vi_layer.h
+@@ -24,6 +24,14 @@
+ #define SUN8I_MIXER_CHAN_VI_LAYER_TOP_LADDR(ch, layer, plane) \
+ 		(0x2000 + 0x1000 * (ch) + 0x30 * (layer) + 0x18 + 4 * (plane))
+ #define SUN8I_MIXER_CHAN_VI_OVL_SIZE(ch)	(0x2000 + 0x1000 * (ch) + 0xe8)
++#define SUN8I_MIXER_CHAN_VI_HDS_Y(ch) \
++		(0x2000 + 0x1000 * (ch) + 0xf0)
++#define SUN8I_MIXER_CHAN_VI_HDS_UV(ch) \
++		(0x2000 + 0x1000 * (ch) + 0xf4)
++#define SUN8I_MIXER_CHAN_VI_VDS_Y(ch) \
++		(0x2000 + 0x1000 * (ch) + 0xf8)
++#define SUN8I_MIXER_CHAN_VI_VDS_UV(ch) \
++		(0x2000 + 0x1000 * (ch) + 0xfc)
+ 
+ #define SUN8I_MIXER_CHAN_VI_LAYER_ATTR_EN		BIT(0)
+ /* RGB mode should be set for RGB formats and cleared for YCbCr */
+@@ -33,6 +41,9 @@
+ #define SUN50I_MIXER_CHAN_VI_LAYER_ATTR_ALPHA_MASK	GENMASK(31, 24)
+ #define SUN50I_MIXER_CHAN_VI_LAYER_ATTR_ALPHA(x)	((x) << 24)
+ 
++#define SUN8I_MIXER_CHAN_VI_DS_N(x)			((x) << 16)
++#define SUN8I_MIXER_CHAN_VI_DS_M(x)			((x) << 0)
++
+ struct sun8i_mixer;
+ 
+ struct sun8i_vi_layer {
+-- 
+2.20.1
+
