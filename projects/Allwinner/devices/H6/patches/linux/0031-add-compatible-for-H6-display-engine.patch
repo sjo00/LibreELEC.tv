@@ -1,0 +1,24 @@
+From 0dcd810acabb452b62faddbef6400380e3725a16 Mon Sep 17 00:00:00 2001
+From: Jernej Skrabec <jernej.skrabec@siol.net>
+Date: Wed, 28 Mar 2018 20:15:03 +0200
+Subject: [PATCH] drm/sun4i: Add compatible for H6 display engine
+
+H6 is first Allwinner SoC which supports 10 bit colors, HDR and AFBC.
+
+Signed-off-by: Jernej Skrabec <jernej.skrabec@siol.net>
+---
+ drivers/gpu/drm/sun4i/sun4i_drv.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/gpu/drm/sun4i/sun4i_drv.c b/drivers/gpu/drm/sun4i/sun4i_drv.c
+index 1e41c3f5fd6d1..1ca7b70cbbfae 100644
+--- a/drivers/gpu/drm/sun4i/sun4i_drv.c
++++ b/drivers/gpu/drm/sun4i/sun4i_drv.c
+@@ -406,6 +406,7 @@ static const struct of_device_id sun4i_drv_of_table[] = {
+ 	{ .compatible = "allwinner,sun8i-v3s-display-engine" },
+ 	{ .compatible = "allwinner,sun9i-a80-display-engine" },
+ 	{ .compatible = "allwinner,sun50i-a64-display-engine" },
++	{ .compatible = "allwinner,sun50i-h6-display-engine" },
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, sun4i_drv_of_table);

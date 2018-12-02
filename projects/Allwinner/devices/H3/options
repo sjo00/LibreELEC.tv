@@ -36,3 +36,6 @@
 
   # Kernel target
     KERNEL_TARGET="zImage"
+
+  # additional drivers to install:
+    ADDITIONAL_DRIVERS="$ADDITIONAL_DRIVERS gpu-sunxi"

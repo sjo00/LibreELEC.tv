@@ -26,7 +26,7 @@
     KERNEL_TARGET="Image"
 
   # ATF platform
-    ATF_PLATFORM="sun50i_a64"
+    ATF_PLATFORM="sun50i_h6"
 
   # additional drivers to install:
-    ADDITIONAL_DRIVERS="$ADDITIONAL_DRIVERS gpu-sunxi"
+    ADDITIONAL_DRIVERS="$ADDITIONAL_DRIVERS gpu-sunxi-midgard"

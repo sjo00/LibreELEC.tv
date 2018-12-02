@@ -1,0 +1,69 @@
+From 058262b1e5395b8430b1bcd1fde9d7e2e9e42085 Mon Sep 17 00:00:00 2001
+From: Jernej Skrabec <jernej.skrabec@siol.net>
+Date: Sun, 4 Nov 2018 19:26:57 +0100
+Subject: [PATCH 26/32] drm/sun4i: dw-hdmi-phy: Reorder quirks by family
+
+Currently, quirks and compatibles are sorted alphabetically. However,
+they should be sorted by family release date and then alphabetically.
+
+Fix that by moving A64 quirks and compatible to bottom. No functional
+change is made.
+
+Signed-off-by: Jernej Skrabec <jernej.skrabec@siol.net>
+Signed-off-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20181104182705.18047-21-jernej.skrabec@siol.net
+---
+ drivers/gpu/drm/sun4i/sun8i_hdmi_phy.c | 22 +++++++++++-----------
+ 1 file changed, 11 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/gpu/drm/sun4i/sun8i_hdmi_phy.c b/drivers/gpu/drm/sun4i/sun8i_hdmi_phy.c
+index 365cb5a9fb77..adc3ba7df7e3 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_hdmi_phy.c
++++ b/drivers/gpu/drm/sun4i/sun8i_hdmi_phy.c
+@@ -403,13 +403,6 @@ static struct regmap_config sun8i_hdmi_phy_regmap_config = {
+ 	.name		= "phy"
+ };
+ 
+-static const struct sun8i_hdmi_phy_variant sun50i_a64_hdmi_phy = {
+-	.has_phy_clk = true,
+-	.phy_init = &sun8i_hdmi_phy_init_h3,
+-	.phy_disable = &sun8i_hdmi_phy_disable_h3,
+-	.phy_config = &sun8i_hdmi_phy_config_h3,
+-};
+-
+ static const struct sun8i_hdmi_phy_variant sun8i_a83t_hdmi_phy = {
+ 	.phy_init = &sun8i_hdmi_phy_init_a83t,
+ 	.phy_disable = &sun8i_hdmi_phy_disable_a83t,
+@@ -431,11 +424,14 @@ static const struct sun8i_hdmi_phy_variant sun8i_r40_hdmi_phy = {
+ 	.phy_config = &sun8i_hdmi_phy_config_h3,
+ };
+ 
++static const struct sun8i_hdmi_phy_variant sun50i_a64_hdmi_phy = {
++	.has_phy_clk = true,
++	.phy_init = &sun8i_hdmi_phy_init_h3,
++	.phy_disable = &sun8i_hdmi_phy_disable_h3,
++	.phy_config = &sun8i_hdmi_phy_config_h3,
++};
++
+ static const struct of_device_id sun8i_hdmi_phy_of_table[] = {
+-	{
+-		.compatible = "allwinner,sun50i-a64-hdmi-phy",
+-		.data = &sun50i_a64_hdmi_phy,
+-	},
+ 	{
+ 		.compatible = "allwinner,sun8i-a83t-hdmi-phy",
+ 		.data = &sun8i_a83t_hdmi_phy,
+@@ -448,6 +444,10 @@ static const struct of_device_id sun8i_hdmi_phy_of_table[] = {
+ 		.compatible = "allwinner,sun8i-r40-hdmi-phy",
+ 		.data = &sun8i_r40_hdmi_phy,
+ 	},
++	{
++		.compatible = "allwinner,sun50i-a64-hdmi-phy",
++		.data = &sun50i_a64_hdmi_phy,
++	},
+ 	{ /* sentinel */ }
+ };
+ 
+-- 
+2.19.2
+

@@ -1,0 +1,64 @@
+From c8ced5516d2340641a676d6f139577d45bcb4e56 Mon Sep 17 00:00:00 2001
+From: Icenowy Zheng <icenowy@aosc.io>
+Date: Sat, 3 Nov 2018 20:32:37 +0800
+Subject: [PATCH 07/28] arm64: allwinner: h6: add EMAC device nodes
+
+Allwinner H6 SoC has an EMAC like the one in A64.
+
+Add device tree nodes for the H6 DTSI file.
+
+Signed-off-by: Icenowy Zheng <icenowy@aosc.io>
+Signed-off-by: Maxime Ripard <maxime.ripard@bootlin.com>
+---
+ arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi | 28 ++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi
+index 040828d2e2c0..11f7ce7d1876 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-h6.dtsi
+@@ -149,6 +149,14 @@
+ 			interrupt-controller;
+ 			#interrupt-cells = <3>;
+ 
++			ext_rgmii_pins: rgmii_pins {
++				pins = "PD0", "PD1", "PD2", "PD3", "PD4",
++				       "PD5", "PD7", "PD8", "PD9", "PD10",
++				       "PD11", "PD12", "PD13", "PD19", "PD20";
++				function = "emac";
++				drive-strength = <40>;
++			};
++
+ 			mmc0_pins: mmc0-pins {
+ 				pins = "PF0", "PF1", "PF2", "PF3",
+ 				       "PF4", "PF5";
+@@ -258,6 +266,26 @@
+ 			status = "disabled";
+ 		};
+ 
++		emac: ethernet@5020000 {
++			compatible = "allwinner,sun50i-a64-emac",
++				     "allwinner,sun50i-h6-emac";
++			syscon = <&syscon>;
++			reg = <0x05020000 0x10000>;
++			interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "macirq";
++			resets = <&ccu RST_BUS_EMAC>;
++			reset-names = "stmmaceth";
++			clocks = <&ccu CLK_BUS_EMAC>;
++			clock-names = "stmmaceth";
++			status = "disabled";
++
++			mdio: mdio {
++				compatible = "snps,dwmac-mdio";
++				#address-cells = <1>;
++				#size-cells = <0>;
++			};
++		};
++
+ 		r_ccu: clock@7010000 {
+ 			compatible = "allwinner,sun50i-h6-r-ccu";
+ 			reg = <0x07010000 0x400>;
+-- 
+2.19.2
+

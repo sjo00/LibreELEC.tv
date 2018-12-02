@@ -1,0 +1,58 @@
+From 76ce87ca5063ae7b0bee00ce328cab362519d318 Mon Sep 17 00:00:00 2001
+From: Jernej Skrabec <jernej.skrabec@siol.net>
+Date: Sun, 4 Nov 2018 19:26:54 +0100
+Subject: [PATCH 23/32] drm/sun4i: dw-hdmi: Add quirk for setting TMDS clock
+
+It turns out that H6 HDMI BSP kernel driver doesn't change TMDS rate at
+all. At this point it is not clear whether it is just not necessary or
+it would cause some kind of issues.
+
+Add a quirk for it.
+
+Acked-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Reviewed-by: Chen-Yu Tsai <wens@csie.org>
+Signed-off-by: Jernej Skrabec <jernej.skrabec@siol.net>
+Signed-off-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Link: https://patchwork.freedesktop.org/patch/msgid/20181104182705.18047-18-jernej.skrabec@siol.net
+---
+ drivers/gpu/drm/sun4i/sun8i_dw_hdmi.c | 4 +++-
+ drivers/gpu/drm/sun4i/sun8i_dw_hdmi.h | 1 +
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/sun4i/sun8i_dw_hdmi.c b/drivers/gpu/drm/sun4i/sun8i_dw_hdmi.c
+index ec122136ee9d..99b878e380e1 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_dw_hdmi.c
++++ b/drivers/gpu/drm/sun4i/sun8i_dw_hdmi.c
+@@ -21,7 +21,8 @@ static void sun8i_dw_hdmi_encoder_mode_set(struct drm_encoder *encoder,
+ {
+ 	struct sun8i_dw_hdmi *hdmi = encoder_to_sun8i_dw_hdmi(encoder);
+ 
+-	clk_set_rate(hdmi->clk_tmds, mode->crtc_clock * 1000);
++	if (hdmi->quirks->set_rate)
++		clk_set_rate(hdmi->clk_tmds, mode->crtc_clock * 1000);
+ }
+ 
+ static const struct drm_encoder_helper_funcs
+@@ -235,6 +236,7 @@ static int sun8i_dw_hdmi_remove(struct platform_device *pdev)
+ 
+ static const struct sun8i_dw_hdmi_quirks sun8i_a83t_quirks = {
+ 	.mode_valid = sun8i_dw_hdmi_mode_valid_a83t,
++	.set_rate = true,
+ };
+ 
+ static const struct of_device_id sun8i_dw_hdmi_dt_ids[] = {
+diff --git a/drivers/gpu/drm/sun4i/sun8i_dw_hdmi.h b/drivers/gpu/drm/sun4i/sun8i_dw_hdmi.h
+index a645b8bc9f58..49c9e80c46ea 100644
+--- a/drivers/gpu/drm/sun4i/sun8i_dw_hdmi.h
++++ b/drivers/gpu/drm/sun4i/sun8i_dw_hdmi.h
+@@ -173,6 +173,7 @@ struct sun8i_hdmi_phy {
+ struct sun8i_dw_hdmi_quirks {
+ 	enum drm_mode_status (*mode_valid)(struct drm_connector *connector,
+ 					   const struct drm_display_mode *mode);
++	unsigned int set_rate : 1;
+ };
+ 
+ struct sun8i_dw_hdmi {
+-- 
+2.19.2
+
