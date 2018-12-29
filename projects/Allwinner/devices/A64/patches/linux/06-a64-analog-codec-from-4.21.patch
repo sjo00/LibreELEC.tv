@@ -1,0 +1,373 @@
+From 5e06aa50524b45a834b1f22b3160b93fb3adabc4 Mon Sep 17 00:00:00 2001
+From: Chen-Yu Tsai <wens@csie.org>
+Date: Thu, 22 Nov 2018 18:23:22 +0800
+Subject: [PATCH] clk: sunxi-ng: sun50i: a64: Use sigma-delta modulation for
+ audio PLL
+
+The audio blocks require specific clock rates. Until now we were using
+the closest clock rate possible with integer N-M factors. This resulted
+in audio playback being slightly slower than it should be.
+
+The vendor kernel gets around this (for some SoCs) by using sigma-delta
+modulation to generate a fractional-N factor. As the PLL hardware is
+identical in most chips, we can port the settings for H3 onto the A64.
+
+Acked-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Tested-by: Vasily Khoruzhick <anarsoul@gmail.com>
+Signed-off-by: Chen-Yu Tsai <wens@csie.org>
+---
+ drivers/clk/sunxi-ng/ccu-sun50i-a64.c | 37 +++++++++++++++++----------
+ 1 file changed, 24 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/clk/sunxi-ng/ccu-sun50i-a64.c b/drivers/clk/sunxi-ng/ccu-sun50i-a64.c
+index 1f45b20ad752..181b599dc163 100644
+--- a/drivers/clk/sunxi-ng/ccu-sun50i-a64.c
++++ b/drivers/clk/sunxi-ng/ccu-sun50i-a64.c
+@@ -51,18 +51,29 @@ static struct ccu_nkmp pll_cpux_clk = {
+  * the base (2x, 4x and 8x), and one variable divider (the one true
+  * pll audio).
+  *
+- * We don't have any need for the variable divider for now, so we just
+- * hardcode it to match with the clock names
++ * With sigma-delta modulation for fractional-N on the audio PLL,
++ * we have to use specific dividers. This means the variable divider
++ * can no longer be used, as the audio codec requests the exact clock
++ * rates we support through this mechanism. So we now hard code the
++ * variable divider to 1. This means the clock rates will no longer
++ * match the clock names.
+  */
+ #define SUN50I_A64_PLL_AUDIO_REG	0x008
+ 
+-static SUNXI_CCU_NM_WITH_GATE_LOCK(pll_audio_base_clk, "pll-audio-base",
+-				   "osc24M", 0x008,
+-				   8, 7,	/* N */
+-				   0, 5,	/* M */
+-				   BIT(31),	/* gate */
+-				   BIT(28),	/* lock */
+-				   CLK_SET_RATE_UNGATE);
++static struct ccu_sdm_setting pll_audio_sdm_table[] = {
++	{ .rate = 22579200, .pattern = 0xc0010d84, .m = 8, .n = 7 },
++	{ .rate = 24576000, .pattern = 0xc000ac02, .m = 14, .n = 14 },
++};
++
++static SUNXI_CCU_NM_WITH_SDM_GATE_LOCK(pll_audio_base_clk, "pll-audio-base",
++				       "osc24M", 0x008,
++				       8, 7,	/* N */
++				       0, 5,	/* M */
++				       pll_audio_sdm_table, BIT(24),
++				       0x284, BIT(31),
++				       BIT(31),	/* gate */
++				       BIT(28),	/* lock */
++				       CLK_SET_RATE_UNGATE);
+ 
+ static SUNXI_CCU_NM_WITH_FRAC_GATE_LOCK_MIN_MAX(pll_video0_clk, "pll-video0",
+ 						"osc24M", 0x010,
+@@ -594,9 +605,9 @@ static SUNXI_CCU_M_WITH_GATE(gpu_clk, "gpu", "pll-gpu",
+ /* Fixed Factor clocks */
+ static CLK_FIXED_FACTOR(osc12M_clk, "osc12M", "osc24M", 2, 1, 0);
+ 
+-/* We hardcode the divider to 4 for now */
++/* We hardcode the divider to 1 for now */
+ static CLK_FIXED_FACTOR(pll_audio_clk, "pll-audio",
+-			"pll-audio-base", 4, 1, CLK_SET_RATE_PARENT);
++			"pll-audio-base", 1, 1, CLK_SET_RATE_PARENT);
+ static CLK_FIXED_FACTOR(pll_audio_2x_clk, "pll-audio-2x",
+ 			"pll-audio-base", 2, 1, CLK_SET_RATE_PARENT);
+ static CLK_FIXED_FACTOR(pll_audio_4x_clk, "pll-audio-4x",
+@@ -916,10 +927,10 @@ static int sun50i_a64_ccu_probe(struct platform_device *pdev)
+ 	if (IS_ERR(reg))
+ 		return PTR_ERR(reg);
+ 
+-	/* Force the PLL-Audio-1x divider to 4 */
++	/* Force the PLL-Audio-1x divider to 1 */
+ 	val = readl(reg + SUN50I_A64_PLL_AUDIO_REG);
+ 	val &= ~GENMASK(19, 16);
+-	writel(val | (3 << 16), reg + SUN50I_A64_PLL_AUDIO_REG);
++	writel(val | (0 << 16), reg + SUN50I_A64_PLL_AUDIO_REG);
+ 
+ 	writel(0x515, reg + SUN50I_A64_PLL_MIPI_REG);
+ 
+-- 
+2.20.1
+
+From ca0412a05756cd0b94751ca4d54fe6522f00b1f4 Mon Sep 17 00:00:00 2001
+From: Chen-Yu Tsai <wens@csie.org>
+Date: Thu, 22 Nov 2018 18:23:19 +0800
+Subject: [PATCH] ASoC: sunxi: sun50i-codec-analog: Add support for cpvdd
+ regulator supply
+
+On the Allwinner A64 SoCs, the audio codec has a built-in headphone
+amplifier. This amplifier has a power supply separate from the rest of
+the analog audio circuitry, labeled cpvdd.
+
+This patch adds a DAPM widget for this supply, and ties it to the
+headphone amp widget.
+
+Signed-off-by: Chen-Yu Tsai <wens@csie.org>
+Acked-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Signed-off-by: Mark Brown <broonie@kernel.org>
+---
+ sound/soc/sunxi/sun50i-codec-analog.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/sound/soc/sunxi/sun50i-codec-analog.c b/sound/soc/sunxi/sun50i-codec-analog.c
+index 8f5f999df631..df1fed0aa001 100644
+--- a/sound/soc/sunxi/sun50i-codec-analog.c
++++ b/sound/soc/sunxi/sun50i-codec-analog.c
+@@ -274,6 +274,7 @@ static const struct snd_soc_dapm_widget sun50i_a64_codec_widgets[] = {
+ 	 * stream widgets at the card level.
+ 	 */
+ 
++	SND_SOC_DAPM_REGULATOR_SUPPLY("hpvcc", 0, 0),
+ 	SND_SOC_DAPM_MUX("Headphone Source Playback Route",
+ 			 SND_SOC_NOPM, 0, 0, sun50i_codec_hp_src),
+ 	SND_SOC_DAPM_OUT_DRV("Headphone Amp", SUN50I_ADDA_HP_CTRL,
+@@ -361,6 +362,7 @@ static const struct snd_soc_dapm_route sun50i_a64_codec_routes[] = {
+ 	{ "Headphone Source Playback Route", "Mixer", "Left Mixer" },
+ 	{ "Headphone Source Playback Route", "Mixer", "Right Mixer" },
+ 	{ "Headphone Amp", NULL, "Headphone Source Playback Route" },
++	{ "Headphone Amp", NULL, "hpvcc" },
+ 	{ "HP", NULL, "Headphone Amp" },
+ 
+ 	/* Microphone Routes */
+-- 
+2.20.1
+
+From ec4a95409d5c28962e0097e8291aa7048f8b262a Mon Sep 17 00:00:00 2001
+From: Vasily Khoruzhick <anarsoul@gmail.com>
+Date: Thu, 22 Nov 2018 18:23:23 +0800
+Subject: [PATCH] arm64: dts: allwinner: a64: add nodes necessary for analog
+ sound support
+
+Add nodes for i2s, digital and analog parts of audiocodec on A64.
+
+The routing paths listed are entries connecting the digital and analog
+side of the audio codec together. Due to how device tree works, these
+must be copied over to each board device tree, in addition to any board
+level routes.
+
+The oversampling rate is set to 128, so that when playing back 192 kHz
+audio samples, the MCLK runs at the same rate as the module clock, at
+24.576 MHz.
+
+The user manual suggests using different oversampling rates for different
+sample rates, but that's not possible without a platform-specific machine
+driver.
+
+Signed-off-by: Vasily Khoruzhick <anarsoul@gmail.com>
+[wens@csie.org: Lowered oversampling rate to 128; expanded commit message]
+Acked-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Tested-by: Vasily Khoruzhick <anarsoul@gmail.com>
+Signed-off-by: Chen-Yu Tsai <wens@csie.org>
+---
+ arch/arm64/boot/dts/allwinner/sun50i-a64.dtsi | 54 +++++++++++++++++++
+ 1 file changed, 54 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-a64.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-a64.dtsi
+index 42abfbf56b88..384c417cb7a2 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-a64.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-a64.dtsi
+@@ -155,6 +155,30 @@
+ 		method = "smc";
+ 	};
+ 
++	sound: sound {
++		compatible = "simple-audio-card";
++		simple-audio-card,name = "sun50i-a64-audio";
++		simple-audio-card,format = "i2s";
++		simple-audio-card,frame-master = <&cpudai>;
++		simple-audio-card,bitclock-master = <&cpudai>;
++		simple-audio-card,mclk-fs = <128>;
++		simple-audio-card,aux-devs = <&codec_analog>;
++		simple-audio-card,routing =
++				"Left DAC", "AIF1 Slot 0 Left",
++				"Right DAC", "AIF1 Slot 0 Right",
++				"AIF1 Slot 0 Left ADC", "Left ADC",
++				"AIF1 Slot 0 Right ADC", "Right ADC";
++		status = "disabled";
++
++		cpudai: simple-audio-card,cpu {
++			sound-dai = <&dai>;
++		};
++
++		link_codec: simple-audio-card,codec {
++			sound-dai = <&codec>;
++		};
++	};
++
+ 	sound_spdif {
+ 		compatible = "simple-audio-card";
+ 		simple-audio-card,name = "On-board SPDIF";
+@@ -665,6 +689,30 @@
+ 			status = "disabled";
+ 		};
+ 
++		dai: dai@1c22c00 {
++			#sound-dai-cells = <0>;
++			compatible = "allwinner,sun50i-a64-codec-i2s";
++			reg = <0x01c22c00 0x200>;
++			interrupts = <GIC_SPI 29 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&ccu CLK_BUS_CODEC>, <&ccu CLK_AC_DIG>;
++			clock-names = "apb", "mod";
++			resets = <&ccu RST_BUS_CODEC>;
++			reset-names = "rst";
++			dmas = <&dma 15>, <&dma 15>;
++			dma-names = "rx", "tx";
++			status = "disabled";
++		};
++
++		codec: codec@1c22e00 {
++			#sound-dai-cells = <0>;
++			compatible = "allwinner,sun8i-a33-codec";
++			reg = <0x01c22e00 0x600>;
++			interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&ccu CLK_BUS_CODEC>, <&ccu CLK_AC_DIG>;
++			clock-names = "bus", "mod";
++			status = "disabled";
++		};
++
+ 		uart0: serial@1c28000 {
+ 			compatible = "snps,dw-apb-uart";
+ 			reg = <0x01c28000 0x400>;
+@@ -924,6 +972,12 @@
+ 			#reset-cells = <1>;
+ 		};
+ 
++		codec_analog: codec-analog@1f015c0 {
++			compatible = "allwinner,sun50i-a64-codec-analog";
++			reg = <0x01f015c0 0x4>;
++			status = "disabled";
++		};
++
+ 		r_i2c: i2c@1f02400 {
+ 			compatible = "allwinner,sun50i-a64-i2c",
+ 				     "allwinner,sun6i-a31-i2c";
+-- 
+2.20.1
+
+From 498c21f233ed0bd643b5f11ecc19dc8727231c7e Mon Sep 17 00:00:00 2001
+From: Vasily Khoruzhick <anarsoul@gmail.com>
+Date: Thu, 22 Nov 2018 18:23:24 +0800
+Subject: [PATCH] arm64: dts: allwinner: a64: enable sound on Pine64 and SoPine
+
+This commit enables I2S, digital and analog parts of audiocodec on
+Pine64 and SoPine boards.
+
+Signed-off-by: Vasily Khoruzhick <anarsoul@gmail.com>
+[wens@csie.org: Dropped headphone_amp; added headphone amp regulator supply]
+Acked-by: Maxime Ripard <maxime.ripard@bootlin.com>
+Tested-by: Vasily Khoruzhick <anarsoul@gmail.com>
+Signed-off-by: Chen-Yu Tsai <wens@csie.org>
+---
+ .../boot/dts/allwinner/sun50i-a64-pine64.dts  | 27 +++++++++++++++++++
+ .../allwinner/sun50i-a64-sopine-baseboard.dts | 26 ++++++++++++++++++
+ .../boot/dts/allwinner/sun50i-a64-sopine.dtsi |  4 +++
+ 3 files changed, 57 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-a64-pine64.dts b/arch/arm64/boot/dts/allwinner/sun50i-a64-pine64.dts
+index c077b6c1f458..216f2f5db5ef 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-a64-pine64.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-a64-pine64.dts
+@@ -75,6 +75,19 @@
+ 	};
+ };
+ 
++&codec {
++	status = "okay";
++};
++
++&codec_analog {
++	hpvcc-supply = <&reg_eldo1>;
++	status = "okay";
++};
++
++&dai {
++	status = "okay";
++};
++
+ &de {
+ 	status = "okay";
+ };
+@@ -259,6 +272,20 @@
+ 	vcc-hdmi-supply = <&reg_dldo1>;
+ };
+ 
++&sound {
++	simple-audio-card,aux-devs = <&codec_analog>;
++	simple-audio-card,widgets = "Microphone", "Microphone Jack",
++				    "Headphone", "Headphone Jack";
++	simple-audio-card,routing =
++			"Left DAC", "AIF1 Slot 0 Left",
++			"Right DAC", "AIF1 Slot 0 Right",
++			"Headphone Jack", "HP",
++			"AIF1 Slot 0 Left ADC", "Left ADC",
++			"AIF1 Slot 0 Right ADC", "Right ADC",
++			"MIC2", "Microphone Jack";
++	status = "okay";
++};
++
+ /* On Euler connector */
+ &spdif {
+ 	status = "disabled";
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-a64-sopine-baseboard.dts b/arch/arm64/boot/dts/allwinner/sun50i-a64-sopine-baseboard.dts
+index 53fcc9098df3..2052319b9030 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-a64-sopine-baseboard.dts
++++ b/arch/arm64/boot/dts/allwinner/sun50i-a64-sopine-baseboard.dts
+@@ -80,6 +80,18 @@
+ 	};
+ };
+ 
++&codec {
++	status = "okay";
++};
++
++&codec_analog {
++	status = "okay";
++};
++
++&dai {
++	status = "okay";
++};
++
+ &de {
+ 	status = "okay";
+ };
+@@ -164,6 +176,20 @@
+ 	vcc-hdmi-supply = <&reg_dldo1>;
+ };
+ 
++&sound {
++	simple-audio-card,aux-devs = <&codec_analog>;
++	simple-audio-card,widgets = "Microphone", "Microphone Jack",
++				    "Headphone", "Headphone Jack";
++	simple-audio-card,routing =
++			"Left DAC", "AIF1 Slot 0 Left",
++			"Right DAC", "AIF1 Slot 0 Right",
++			"Headphone Jack", "HP",
++			"AIF1 Slot 0 Left ADC", "Left ADC",
++			"AIF1 Slot 0 Right ADC", "Right ADC",
++			"MIC2", "Microphone Jack";
++	status = "okay";
++};
++
+ &uart0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart0_pb_pins>;
+diff --git a/arch/arm64/boot/dts/allwinner/sun50i-a64-sopine.dtsi b/arch/arm64/boot/dts/allwinner/sun50i-a64-sopine.dtsi
+index 6723b8695e0b..d2651f284aa0 100644
+--- a/arch/arm64/boot/dts/allwinner/sun50i-a64-sopine.dtsi
++++ b/arch/arm64/boot/dts/allwinner/sun50i-a64-sopine.dtsi
+@@ -47,6 +47,10 @@
+ 
+ #include <dt-bindings/gpio/gpio.h>
+ 
++&codec_analog {
++	hpvcc-supply = <&reg_eldo1>;
++};
++
+ &mmc0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&mmc0_pins>;
+-- 
+2.20.1
+
