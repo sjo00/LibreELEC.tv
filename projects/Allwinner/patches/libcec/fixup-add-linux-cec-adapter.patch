@@ -1,0 +1,133 @@
+From 97d8c30fa02de75b8ca012995d6c872d087764ff Mon Sep 17 00:00:00 2001
+From: Jonas Karlman <jonas@kwiboo.se>
+Date: Tue, 1 Jan 2019 23:23:31 +0100
+Subject: [PATCH] fixup! Add Linux CEC Adapter
+
+---
+ .../Linux/LinuxCECAdapterCommunication.cpp    | 56 ++++++++++++++++---
+ 1 file changed, 48 insertions(+), 8 deletions(-)
+
+diff --git a/src/libcec/adapter/Linux/LinuxCECAdapterCommunication.cpp b/src/libcec/adapter/Linux/LinuxCECAdapterCommunication.cpp
+index 878c572f..de79ef3e 100644
+--- a/src/libcec/adapter/Linux/LinuxCECAdapterCommunication.cpp
++++ b/src/libcec/adapter/Linux/LinuxCECAdapterCommunication.cpp
+@@ -1,7 +1,7 @@
+ /*
+  * This file is part of the libCEC(R) library.
+  *
+- * libCEC Linux CEC Adapter is Copyright (C) 2017-2018 Jonas Karlman
++ * libCEC Linux CEC Adapter is Copyright (C) 2017-2019 Jonas Karlman
+  * based heavily on:
+  * libCEC AOCEC Code is Copyright (C) 2016 Gerald Dachs
+  * libCEC Exynos Code is Copyright (C) 2014 Valentin Manea
+@@ -97,8 +97,15 @@ bool CLinuxCECAdapterCommunication::Open(uint32_t UNUSED(iTimeoutMs), bool UNUSE
+       return false;
+     }
+ 
+-    // Clear existing logical addresses and set the CEC device to the unconfigured state
++    // Set logical address to unregistered, without any logical address configured no messages is transmitted or received
+     struct cec_log_addrs log_addrs = {};
++    log_addrs.cec_version = CEC_OP_CEC_VERSION_1_4;
++    log_addrs.vendor_id = CEC_VENDOR_PULSE_EIGHT;
++    log_addrs.num_log_addrs = 1;
++    log_addrs.log_addr[0] = CEC_LOG_ADDR_UNREGISTERED;
++    log_addrs.primary_device_type[0] = CEC_OP_PRIM_DEVTYPE_SWITCH;
++    log_addrs.log_addr_type[0] = CEC_LOG_ADDR_TYPE_UNREGISTERED;
++    log_addrs.all_device_types[0] = CEC_OP_ALL_DEVTYPE_SWITCH;
+     if (ioctl(m_fd, CEC_ADAP_S_LOG_ADDRS, &log_addrs))
+     {
+       LIB_CEC->AddLog(CEC_LOG_ERROR, "CLinuxCECAdapterCommunication::Open - ioctl CEC_ADAP_S_LOG_ADDRS failed - errno=%d", errno);
+@@ -106,6 +113,8 @@ bool CLinuxCECAdapterCommunication::Open(uint32_t UNUSED(iTimeoutMs), bool UNUSE
+       return false;
+     }
+ 
++    LIB_CEC->AddLog(CEC_LOG_DEBUG, "CLinuxCECAdapterCommunication::Open - ioctl CEC_ADAP_S_LOG_ADDRS - log_addr_mask=%04x num_log_addrs=%u", log_addrs.log_addr_mask, log_addrs.num_log_addrs);
++
+     if (CreateThread())
+       return true;
+ 
+@@ -156,7 +165,7 @@ cec_adapter_message_state CLinuxCECAdapterCommunication::Write(const cec_command
+ 
+     LIB_CEC->AddLog(CEC_LOG_DEBUG, "CLinuxCECAdapterCommunication::Write - ioctl CEC_TRANSMIT - tx_status=%02x len=%d addr=%02x opcode=%02x", msg.tx_status, msg.len, msg.msg[0], cec_msg_opcode(&msg));
+ 
+-    // The CEC device will already make multiple transmit attempts
++    // The CEC driver will make re-transmission attempts
+     bRetry = false;
+ 
+     if (msg.tx_status & CEC_TX_STATUS_OK)
+@@ -165,9 +174,6 @@ cec_adapter_message_state CLinuxCECAdapterCommunication::Write(const cec_command
+     if (msg.tx_status & CEC_TX_STATUS_NACK)
+       return ADAPTER_MESSAGE_STATE_SENT_NOT_ACKED;
+ 
+-    if (msg.tx_status & CEC_TX_STATUS_ERROR)
+-      bRetry = true;
+-
+     return ADAPTER_MESSAGE_STATE_ERROR;
+   }
+ 
+@@ -185,6 +191,19 @@ bool CLinuxCECAdapterCommunication::SetLogicalAddresses(const cec_logical_addres
+       return false;
+     }
+ 
++    // Clear existing logical addresses and set the CEC device to the unconfigured state
++    if (log_addrs.num_log_addrs)
++    {
++      log_addrs = {};
++      if (ioctl(m_fd, CEC_ADAP_S_LOG_ADDRS, &log_addrs))
++      {
++        LIB_CEC->AddLog(CEC_LOG_ERROR, "CLinuxCECAdapterCommunication::SetLogicalAddresses - ioctl CEC_ADAP_S_LOG_ADDRS failed - errno=%d", errno);
++        return false;
++      }
++
++      LIB_CEC->AddLog(CEC_LOG_DEBUG, "CLinuxCECAdapterCommunication::SetLogicalAddresses - ioctl CEC_ADAP_S_LOG_ADDRS - log_addr_mask=%04x num_log_addrs=%u", log_addrs.log_addr_mask, log_addrs.num_log_addrs);
++    }
++
+     if (!addresses.IsEmpty())
+     {
+       // NOTE: This can only be configured when num_log_addrs > 0
+@@ -304,6 +323,8 @@ cec_vendor_id CLinuxCECAdapterCommunication::GetVendorId(void)
+ 
+ void *CLinuxCECAdapterCommunication::Process(void)
+ {
++  CTimeout phys_addr_timeout;
++  bool phys_addr_invalid = false;
+   fd_set rd_fds;
+   fd_set ex_fds;
+ 
+@@ -334,8 +355,21 @@ void *CLinuxCECAdapterCommunication::Process(void)
+ 
+         // TODO: handle ev.state_change.log_addr_mask change
+ 
+-        if (!IsStopped() && !(ev.flags & CEC_EVENT_FL_INITIAL_STATE))
+-          m_callback->HandlePhysicalAddressChanged(ev.state_change.phys_addr);
++        if (ev.state_change.phys_addr == CEC_PHYS_ADDR_INVALID)
++        {
++          // NOTE: Delay change to invalid physical address with 10 seconds because
++          //       EDID refresh and other events may cause short periods of invalid physical address
++          phys_addr_timeout.Init(10000);
++          phys_addr_invalid = true;
++        }
++        else
++        {
++          phys_addr_invalid = false;
++
++          // TODO: delay change until after log_addr_mask may have been updated
++          if (!IsStopped())
++            m_callback->HandlePhysicalAddressChanged(ev.state_change.phys_addr);
++        }
+       }
+     }
+ 
+@@ -356,6 +390,12 @@ void *CLinuxCECAdapterCommunication::Process(void)
+       }
+     }
+ 
++    if (phys_addr_invalid && !phys_addr_timeout.TimeLeft() && !IsStopped())
++    {
++      phys_addr_invalid = false;
++      m_callback->HandlePhysicalAddressChanged(CEC_INVALID_PHYSICAL_ADDRESS);
++    }
++
+     if (!IsStopped())
+       Sleep(5);
+   }
